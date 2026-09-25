@@ -28,6 +28,8 @@ clignote_phase:         .space  4   /* 0 rouge éteinte, 1 rouge allumée (E5)  
 touch_signal_compteur:  .space  4   /* pas restants d'extinction brève (E7)      */
     .global prochain_sens
 prochain_sens:          .space  4   /* 0 = prochaine marche avant, 1 = arrière   */
+    .global blink_cycles
+blink_cycles:           .space  4   /* Stockage des cycles DWT pour T6           */
 
 /* ---- Table état -> DEL (un octet par état) ------------------------------ */
     .section .rodata
@@ -61,6 +63,17 @@ fsm_init:
     str     r1, [r0]
     ldr     r0, =touch_signal_compteur
     str     r1, [r0]
+
+    /* Activation du compteur de cycles DWT (T6) */
+    ldr     r1, =0xE000EDFC
+    ldr     r0, [r1]
+    orr     r0, r0, #(1 << 24)
+    str     r0, [r1]
+    ldr     r1, =0xE0001000
+    ldr     r0, [r1]
+    orr     r0, r0, #1
+    str     r0, [r1]
+
     bl      fsm_maj_del
     pop     {r4, pc}
     .size   fsm_init, .-fsm_init
@@ -226,6 +239,13 @@ fsm_maj_del:
     ldr     r1, [r0]
     eors    r1, r1, #1                  /* toggle phase */
     str     r1, [r0]
+
+    /* Capture de DWT_CYCCNT dans blink_cycles à chaque basculement (T6) */
+    ldr     r2, =0xE0001004
+    ldr     r3, [r2]
+    ldr     r2, =blink_cycles
+    str     r3, [r2]
+
     b       fsm_maj_del_phase_apply
 
 fsm_maj_del_phase_set:
