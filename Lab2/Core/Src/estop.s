@@ -61,24 +61,22 @@ estop_init:
     bne     estop_init_falling
 
     /* Actif haut -> RTSR1 (front montant) */
-    ldr     r1, [r0, #EXTI_RTSR1]
     ldr     r2, =EXTI_LIGNE2
+    ldr     r1, [r0, #EXTI_RTSR1]
     orr     r1, r1, r2
     str     r1, [r0, #EXTI_RTSR1]
-    ldr     r1, [r0, #EXTI_FPR1]
-    ldr     r2, =EXTI_LIGNE2
+    ldr     r1, [r0, #EXTI_FTSR1]
     bic     r1, r1, r2
-    str     r1, [r0, #EXTI_FPR1]
+    str     r1, [r0, #EXTI_FTSR1]
     b       estop_init_imr
 
 estop_init_falling:
     /* Actif bas -> FPR1 (front descendant) */
-    ldr     r1, [r0, #EXTI_FPR1]
     ldr     r2, =EXTI_LIGNE2
+    ldr     r1, [r0, #EXTI_FTSR1]
     orr     r1, r1, r2
-    str     r1, [r0, #EXTI_FPR1]
+    str     r1, [r0, #EXTI_FTSR1]
     ldr     r1, [r0, #EXTI_RTSR1]
-    ldr     r2, =EXTI_LIGNE2
     bic     r1, r1, r2
     str     r1, [r0, #EXTI_RTSR1]
 
@@ -124,7 +122,9 @@ estop_init_imr:
 .global EXTI2_IRQHandler
     .type   EXTI2_IRQHandler, %function
 EXTI2_IRQHandler:
+	push	{r4, lr}
     /* 1. État sûr immédiat par BSRR */
+    bl		motor_stop_now
     /* Verte éteinte */
     ldr     r0, =GPIOC_BASE
     ldr     r1, =(1 << (LED_VERTE_PIN + 16))
@@ -140,6 +140,13 @@ EXTI2_IRQHandler:
     ldr     r1, =(1 << LED_ROUGE_PIN)
     str     r1, [r0, #GPIO_BSRR]
 
+    /* Buzzer continu */
+    ldr		r0, =buzzer_continu
+    movs	r1, #1
+    str		r1, [r0]
+    movs	r0, #1
+    bl		buzzer_set
+
     /* 2. estop_flag = 1 */
     ldr     r0, =estop_flag
     movs    r1, #1
@@ -150,5 +157,6 @@ EXTI2_IRQHandler:
     mov     r1, #EXTI_LIGNE2
     str     r1, [r0, #EXTI_RPR1]
     str     r1, [r0, #EXTI_FPR1]
-    bx      lr
+    dsb
+    pop		{r4, pc}
     .size   EXTI2_IRQHandler, .-EXTI2_IRQHandler

@@ -2,70 +2,70 @@
 
 Équipe 2 : Rawda Massaoudou Tahirou et Alice Mpabuye — Section : A02 (Groupe 2) — Dépôt Git : https://github.com/ShotReady/CEG3536_equipeRawda-Alice
 
-## Jalon J1 (validé dans Git au plus tard le 25 septembre 2026)
+## Jalon J1 (validé dans Git au plus tard le 16 Octobre 2026)
 
 ### Exigences de l'équipe
 | Id | Exigence (reformulée par l'équipe) | Critère d'acceptation | Hypothèses |
 |---|---|---|---|
-| E1 | Initialisation | Après réinitialisation (NRST), l'état est ARRÊT (DEL rouge seule) dans les 100 ms[cite: 3]. | Horloge MSI de 4 MHz par défaut, pas de HAL[cite: 8]. |
-| E2 | Défilement par User | Séquence ARRÊT → MARCHE_AVANT → ARRÊT → MARCHE_ARRIÈRE → ARRÊT via le bouton User[cite: 3, 4]. | Alternance gérée par la variable `.bss` `prochain_sens`. |
-| E3 | Anti-rebond et détection de front | Fenêtre d'anti-rebond de 30 ms (`ANTIREBOND_MS`) ; un appui maintenu produit 1 seul événement[cite: 4, 8]. | Échantillonnage périodique à chaque pas de `fsm_step` (1 ms)[cite: 8]. |
-| E4 | E-Stop par interruption | Appui sur PB2 déclenche l'interruption EXTI2 de priorité maximale ; l'ISR met l'état sûr instantanément[cite: 4, 8]. | Bouton E-Stop relié à PB2, niveau actif et front configurés dans `estop_init`[cite: 2, 8]. |
-| E5 | Signalisation d'urgence | Clignotement de la DEL rouge à 2 Hz (250 ms allumée, 250 ms éteinte) en `ARRÊT_URGENCE`, appuis User ignorés[cite: 4]. | Pilotage par `clignote_compteur` et `clignote_phase` dans `fsm_maj_del`[cite: 36, 37]. |
-| E6 | Acquittement | Passage d'urgence à ARRÊT uniquement par appui sur Touch En avec E-Stop relâché[cite: 4]. | Vérification simultanée de l'appui validé et du niveau brut de `BTN_ESTOP`[cite: 36]. |
-| E7 | Touch En hors urgence | Bascule de la variable d'autorisation `touch_enabled` (0/1) et extinction brève (100 ms) de la DEL active[cite: 4]. | Géré par `touch_signal_compteur` dans la machine à états[cite: 36, 37]. |
-| E8 | Temporisation | Routines basées sur une boucle calibrée (`delay_ms`) et base de temps de la FSM[cite: 4, 8]. | `DELAY_BOUCLES_PAR_MS = 1000` ajusté selon les mesures DWT[cite: 8]. |
-| E9 | Robustesse | Cohérence du système face aux appuis simultanés ou aux transitoires d'urgence[cite: 4]. | Un seul point d'appel pour `led_set` via `fsm_maj_del`[cite: 8, 37]. |
+| E1 | Initialisation | Après NRST ou mise sous tension : état ARRÊT en moins de 100 ms (DEL rouge seule, CCR1 = 0, AI1 = AI2 = 0, STB = 0, buzzer silencieux), moteur immobile, TIM1 à 20 kHz et SysTick à 1 ms actifs. | Horloge MSI de 4 MHz par défaut (SystemInit vide), pas de HAL; `motor_init` laisse STB = 0 et CCR1 = 0 avant que TIM1 compte.|
+| E2 | PWM moteur | TIM1_CH1 (PE9) en PWM 1 avec prérechargement et MOE; fréquence 20 kHz ± 5 %; rapport cyclique de 0 à 100 % (au moins 100 pas) mesuré à ± 2 points (T3). | HCLK = PCLK2 = 4 MHz, donc PSC = 0 et ARR = 199; CCR1 = pct × 200 / 100 (résolution de 0,5 %).|
+| E3 | Sens de marche | AVANT : AI1 = 1, AI2 = 0, STB = 1. ARRIÈRE : AI1 = 0, AI2 = 1, STB = 1. ARRÊT et URGENCE : CCR1 = 0, AI1 = AI2 = 0, STB = 0. Changement de sens seulement par ARRÊT, jamais avec CCR1 ≠ 0; AI1 = AI2 = 1 jamais produit. | MARCHE_AVANT = AI1 = 1, AI2 = 0 (sens réel de rotation relevé à la séance 1); alternance par `prochain_sens`; règle appliquée dans `motor_set_dir` (refus si CCR1 ≠ 0). |
+| E4 | Consigne et rampe | Consigne de 25, 50, 75 ou 100 % (50 % au départ); chaque appui validé sur Touch En passe à la suivante, avec un bip court. Rampe de 1 point par 10 ms (0 → 100 % en 1 s ± 10 %) à la montée et à la descente; User vers ARRÊT coupe la PWM sans rampe. | Rampe cadencée par `RAMPE_PAS_MS` = 10 dans `fsm_maj_del`; `CONSIGNE_PAS` = 25; `pwm_pct` remis à 0 à chaque changement d'état. |
+| E5 | Encodeur par interruption | EXTI0 sur les deux fronts de E_A, de priorité entre E-Stop et SysTick; sens déduit de A et B, `enc_count` signé de 32 bits; aucun front perdu (environ 4 400 par seconde); ISR de moins de 15 µs. | `ENC_PUPDR` = 0 (sorties actives de l'encodeur); `ENC_SENS_INVERSE` = 0 à confirmer à T5; durée de l'ISR estimée à environ 50 cycles (≈ 12 µs à 4 MHz), à mesurer. |
+| E6 | Mesure de vitesse et de sens | Toutes les 500 ms : `vitesse_fronts` (valeur absolue) et `sens_mesure` (0 immobile, 1 avant, 2 arrière) mis à jour; tr/min = fronts × 120 / 748; sens mesuré comparé au sens commandé. | `encoder_read` lit `enc_count` en une seule instruction (pas de masquage d'interruption); fenêtre comptée par `fenetre_compteur`; référence : 348 tr/min mesurés à vide à 100 % (arbre de sortie). |
+| E7 | E-Stop coupe la propulsion dans l’interruption | EXTI2 (priorité 0) met CCR1 = 0, STB = 0, AI1 = AI2 = 0, DEL rouge seule, buzzer à 1 et `estop_flag` = 1; la PWM disparaît moins de 1 ms après le front sur PB2, même pendant une rampe. | L'ISR sauvegarde LR (`push {r4, lr}`) et appelle `motor_stop_now` en premier; si la rampe réécrit CCR1 juste après, STB = 0 garde le pilote en veille (état sûr).. |
+| E8 | Signalisation d’urgence et acquittement | Rouge à 2 Hz ± 10 %, buzzer continu, STB = 0, User et Touch En (consigne) ignorés. Touch En validé avec E-Stop relâché ramène en ARRÊT (buzzer coupé, consigne conservée); refusé si E-Stop maintenu; aucune reprise automatique. | Acquittement = `button_pressed(BTN_TOUCH)` et `button_raw(BTN_ESTOP)` = 0; `buzzer_continu` mis à 1 à l'urgence, remis à 0 à l'acquittement; demi-période de 250 ms (`CLIGNOTEMENT_DEMI_MS`). |
+| E9 | Buzzer | Bip de 100 ms ± 10 % à chaque changement d'état et de consigne; double bip en MARCHE_ARRIÈRE; son continu en urgence; sans blocage, à partir de la base de temps SysTick. | `buzzer_bip` prépare la séquence et `buzzer_step` l'avance chaque ms (`BIP_MS` = `BIP_SILENCE_MS` = 100); commande GPIO sur PA0 (pas de variante TIM2); durée réelle d'environ 99 ms. |
+|E10|Base de temps SysTick| LOAD = 3999 pour une période de 1 ms ± 1 %; `SysTick_Handler` incrémente seulement `ticks_ms` et positionne `tick_1ms`; `fsm_step` exécutée une fois par tick; `delay_ms` réécrite sur `ticks_ms`; aucune attente calibrée ne subsiste. | `HORLOGE_HZ` = 4 000 000 donc LOAD = 4 × 1000 − 1; `main` attend `tick_1ms` puis appelle `fsm_step`; `delay_ms` absente de la boucle principale; durée de `fsm_step` inférieure à 1 ms, à vérifier au débogueur. |
+|E11|Mesures aux points de test| Mesures à l'oscilloscope : Fréquence et cycle de travail du PWM pour 25%,50%,75% et 100% de cycle de travail ;Niveaux AI1/AI2/STB en fonction de l'état ;E_A et E_B dans les deux sens ;Délai d'arrêt E-Stop → PWM égal à zéro ;Temps de génération du bip. Chaque résultat est mesuré par rapport à la spécification. |Mesures à vide, sonde ×10, masse sur GND du connecteur de points de test (STE 2061); incertitude de lecture de l'oscilloscope consignée.|
+|E12|Robustesse| E-Stop, Touch En et User pendant une rampe, appuis simultanés, E-Stop pendant l'ISR de l'encodeur : jamais deux DEL allumées, jamais AI1 = AI2 = 1, jamais de changement de sens avec CCR1 ≠ 0, jamais de sortie d'urgence sans acquittement, `enc_count` non corrompu | Protections logicielles : refus dans `motor_set_dir`, STB = 0 en urgence, variables partagées de 32 bits lues et écrites en une instruction; essais moteur alimenté, plateforme à plat. |
 
 ### Rôles et rotation
 | Séance | Réalise | Valide (essais, mesures, relecture) |
 |---|---|---|
 | Séance 0 | Rawda Massaoudou Tahirou | Alice Mpabuye |
-| Séance 1 & Démonstration (22 sept.) | Alice Mpabuye | Rawda Massaoudou Tahirou |
+| Séance 1 & Démonstration (13 sept.) | Alice Mpabuye | Rawda Massaoudou Tahirou |
 
 ### Échéancier des laboratoires 1 à 5
 | Laboratoire | Séances | Démonstration | Remise | Responsable du suivi |
 |---|---|---|---|---|
-| 1 | Septembre 2026 | 22 septembre 2026 | 9 octobre 2026 | Rawda & Alice |
-| 2 | Octobre 2026 | Octobre 2026 | Octobre 2026 | Rawda & Alice |
+| 1 | 2 seances | 22 septembre 2026 | 9 octobre 2026 | Rawda & Alice |
+| 2 | Octobre 2026 | Octobre 2026 | 2 Novembre 2026 | Rawda & Alice |
 | 3 | Novembre 2026 | Novembre 2026 | Novembre 2026 | Rawda & Alice |
 | 4 | Novembre 2026 | Décembre 2026 | Décembre 2026 | Rawda & Alice |
 | 5 | Décembre 2026 | Décembre 2026 | Décembre 2026 | Rawda & Alice |
 
 ## Journal des séances
 
-### Séance 0 — 15 septembre 2026 — réalise : Rawda Massaoudou Tahirou / valide : Alice Mpabuye
-- **Objectifs** : Prise en main de la plateforme Leafy et de la carte Nucleo-L552ZE-Q, configuration de STM32CubeIDE, initialisation du dépôt Git d'équipe[cite: 9, 41].
-- **Fait** : Importation du projet de démarrage vide, compilation sans avertissement et test d'affichage de la DEL rouge seule[cite: 9, 41].
-- **Décisions** : Adoption de l'organisation des fichiers source dans `Core/Src` et utilisation du fichier `registres.inc`[cite: 6, 7].
-- **Difficultés et solutions** : Repérage de la particularité de la famille STM32L5 (le registre de sélection de port `EXTI_EXTICR1` se situe dans le bloc `EXTI` à l'offset `0x60`, et non dans `SYSCFG`)[cite: 7, 41].
-- **Essais et mesures** : Vérification du bon état initial (E1)[cite: 9].
-- **Validations Git** : Commit initial de la structure du projet avec validation de chaque membre[cite: 9].
-
-### Séance 1 & Démonstration — 22 septembre 2026 — réalise : Alice Mpabuye / valide : Rawda Massaoudou Tahirou
-- **Objectifs** : Implémentation des modules `buttons.s`, `estop.s` et `fsm.s`, validation des exigences E1 à E9, et démonstration officielle devant l'assistant en laboratoire[cite: 5, 9].
+### Séance 1 — 13 Octobre 2026 — réalise : Rawda Massaoudou Tahirou / valide : Alice Mpabuye
+- **Objectifs** : 
 - **Fait** : 
-  - Écriture de la logique d'anti-rebond par échantillons consécutifs (30 ms) dans `button_pressed`.
-  - Configuration de l'interruption externe EXTI2 sur PB2 avec priorité maximale (`NVIC_PRIO_MAX`) et mise en place de l'état sûr immédiat par écriture atomique dans `BSRR` dans l'ISR `EXTI2_IRQHandler`.
-  - Réalisation de la machine à états complète (`fsm_step`, `fsm_maj_del`) gérant l'alternance des sens de marche, le clignotement de la DEL rouge à 2 Hz en urgence, l'acquittement sécurisé par Touch En et l'extinction brève (100 ms).
-- **Décisions** : Traitement de la sécurité critique (< 10 ms) directement dans l'ISR pour couper immédiatement les DEL verte et bleue même au sein d'une temporisation[cite: 4, 8].
-- **Difficultés et solutions** : Ajustement de la logique XOR dans `button_raw` pour normaliser l'état actif et synchronisation du compteur de cycles `DWT_CYCCNT` pour mesurer précisément la période de clignotement (T6)[cite: 10, 30].
-- **Essais et mesures** : Réussite et validation de tous les essais T1 à T10 (test de robustesse, appuis simultanés, anti-rebond, non-régression)[cite: 9, 10]. Démonstration validée avec succès par l'assistant en fin de séance[cite: 9].
-- **Validations Git** : Validation et synchronisation finale de tous les codes sources assembleur sur le dépôt distant de l'équipe[cite: 9].
+- **Décisions** : 
+- **Difficultés et solutions** : 
+- **Essais et mesures** : 
+- **Validations Git** : 
+
+### Séance 2 — 22 Octobre 2026 — réalise : Alice Mpabuye / valide : Rawda Massaoudou Tahirou
+- **Objectifs** :
+- **Fait** :
+- **Décisions** :
+- **Difficultés et solutions** :
+- **Essais et mesures** :
+- **Validations Git** :
 
 ## Tableau des essais (T1 à T10)
 | Essai | Date | Résultat observé | Verdict | Preuve (fichier) |
 |---|---|---|---|---|
-| T1 Réinitialisation | 22 sept. 2026 | DEL rouge seule allumée dans les 100 ms après un reset | Conforme[cite: 9] | Capture IDR/ODR[cite: 9] |
-| T2 Cycle User | 22 sept. 2026 | Séquence exacte : Rouge → Verte → Rouge → Bleue → Rouge | Conforme[cite: 9, 12] | Relevé des états ODR[cite: 9] |
-| T3 Anti-rebond | 22 sept. 2026 | 20 appuis validés donnent 20 transitions exactes ; 1 appui maintenu de 2 s génère 1 seule transition | Conforme[cite: 9, 13] | Watch sur `compteur_transitions`[cite: 9, 10] |
-| T4 Niveaux logiques | 22 sept. 2026 | Niveaux actifs et résistances de rappel (`PUPDR`) vérifiés par lecture directe de `IDR` | Conforme[cite: 9, 13] | Tableau des mesures IDR[cite: 10] |
-| T5 E-Stop | 22 sept. 2026 | Passage immédiat en urgence et extinction de la DEL active en < 10 ms | Conforme[cite: 10, 13] | Capture oscilloscope (PB2 et PC7)[cite: 10] |
-| T6 Clignotement | 22 sept. 2026 | Période mesurée de la DEL rouge en urgence égale à 500 ms ± 10% | Conforme[cite: 10, 14] | Watch sur `blink_cycles`[cite: 10] |
-| T7 Acquittement | 22 sept. 2026 | Retour en ARRÊT si Touch En appuyé avec E-Stop relâché ; refus si maintenu | Conforme[cite: 10, 14] | Suivi de la variable `etat`[cite: 10] |
-| T8 User ignoré en urgence | 22 sept. 2026 | Les appuis sur le bouton User n'ont aucun effet pendant l'état `ARRÊT_URGENCE` | Conforme[cite: 10, 14] | Relevé de l'état FSM[cite: 10] |
-| T9 Touch En hors urgence | 22 sept. 2026 | `touch_enabled` alterne entre 0 et 1 avec extinction brève (100 ms) de la DEL active | Conforme[cite: 10, 14] | Watch sur `touch_enabled`[cite: 10] |
-| T10 Robustesse | 22 sept. 2026 | Appuis simultanés et E-Stop déclenché pendant une transition traités sans incohérence | Conforme[cite: 10, 14] | Rapport de test et traces débogueur[cite: 10] |
+| T1 Réinitialisation |  |  |  |
+| T2 Cycle User et sens |  |  | |
+| T3 PWM |  |  |  |
+| T4 Rampe |  |  |  |
+| T5 Encodeur |  | |  |
+| T6 Vitesse |  |  |  |
+| T7 E-Stop |  |  |  |  |
+| T8 Urgence et acquittement |  |  |  |  |
+| T9 Buzzer |  |  |  |  |
+| T10 SysTick et robustesse |  |  |  |  |
 
 ## Routine conservée pour L3-A
 - **Routine** : `button_pressed` (implémentée dans `buttons.s`)
@@ -73,5 +73,5 @@
 - **Cas d'essai** : Soumission d'une suite d'impulsions bruitées (rebonds simulés de < 30 ms) pour vérifier que le filtre ignore les instabilités et ne déclenche qu'un seul front validé après le seuil temporel. Cette routine sera réécrite en langage C au Laboratoire 3 pour comparaison de performance[cite: 3, 6].
 
 ## Déclaration des sources et de l'usage d'outils d'IA générative
-- **Sources** : Manuel de référence STM32L5 (RM0438), Guide de la plateforme Leafy, Notes de cours 
-- **Outils d'IA** : Aucun usage d'outil d'IA générative 
+- **Sources** : Manuel de référence STM32L5 (RM0438), Guide de la plateforme Leafy, Notes de cours
+- **Outils d'IA** : Aucun usage d'outil d'IA générative

@@ -121,6 +121,20 @@ encoder_init:
     .type   EXTI0_IRQHandler, %function
 EXTI0_IRQHandler:
     /* 1. et 2. À COMPLÉTER (E5) */
+	ldr		r0, =GPIOB_BASE
+	ldr		r1, [r0, #GPIO_IDR]				/* UNE seule lecture */
+	ubfx	r2, r1, #ENC_A_PIN, #1
+	ubfx	r1, r1, #ENC_B_PIN, #1
+	eor		r1, r1, r2
+	eor		r1, r1, #ENC_SENS_INVERSE		/* alignement sur la marche avant */
+
+	ldr		r0, =enc_count
+	ldr		r3, [r0]
+	cmp		r1, #0
+	ite		eq
+	addeq	r3, r3, #1
+	subne	r3, r3, #1
+	str		r3, [r0]
 
     /* 3. requête effacée */
     ldr     r0, =EXTI_BASE
@@ -146,11 +160,31 @@ EXTI0_IRQHandler:
     .type   encoder_read, %function
 encoder_read:
     /* À COMPLÉTER : le squelette ne mesure rien et retourne 0 */
-    cmp     r0, #0
-    it      ne
-    movne   r1, #SENS_IMMOBILE
-    it      ne
-    strne   r1, [r0]
-    movs    r0, #0
+    ldr		r1, =enc_count
+    ldr		r1, [r1]						/* instantané : UNE seule lecture */
+    ldr		r2, =enc_repere
+    ldr		r3, [r2]						/* ancien repère */
+    str		r1, [r2]						/* nouveau repère = instantané */
+    subs	r1, r1, r3						/* r1 = variation signée */
+    beq		er_immobile
+    bgt		er_avant
+    rsbs	r1, r1, #0						/* négative : valeur absolue */
+    movs 	r3, #SENS_ARRIERE
+    b		er_ecrit
+er_avant:
+	movs	r3, #SENS_AVANT
+	b		er_ecrit
+er_immobile:
+	movs	r3, #SENS_IMMOBILE
+er_ecrit:									/* r1 = |variation|, r3 = sens */
+	ldr		r2, =sens_mesure
+	str		r3, [r2]
+	ldr		r2, =vitesse_fronts
+	str		r1, [r2]
+	cmp		r0, #0
+	it		ne
+	strne	r3, [r0]						/* *sens = sens, seulement si r0 != 0 */
+	mov		r0, r1							 /* retour = |variation| */
     bx      lr
     .size   encoder_read, .-encoder_read
+    .ltorg

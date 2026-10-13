@@ -100,6 +100,18 @@ buzzer_set_off:
     .type   buzzer_bip, %function
 buzzer_bip:
     /* À COMPLÉTER */
+    cmp 	r0, #0
+    beq		buzzer_bip_fin					/* n = 0 : rien à faire */
+    subs	r0, r0, #1						/* bips restants après le premier */
+    ldr		r1, =buzzer_bips
+    str		r0, [r1]
+    movs	r1, #BIP_MS
+    ldr		r2, =buzzer_restant
+    str		r1, [r2]
+    movs	r1, #1							/* phase 1 = son */
+    ldr		r2, =buzzer_phase
+    str		r1, [r2]
+buzzer_bip_fin:
     bx      lr
     .size   buzzer_bip, .-buzzer_bip
 
@@ -121,6 +133,49 @@ buzzer_step:
     ldr     r0, =buzzer_continu
     ldr     r0, [r0]
     /* À COMPLÉTER : machine à états des bips (r0 = 1 si son continu) */
+    cmp		r0, #0
+    bne		bz_sortie				/* continu : r0 != 0 -> son, rien d'autre */
+
+    ldr		r4, =buzzer_phase
+    ldr		r1, [r4]
+    cmp		r1, #0
+    beq		bz_sortie				/* repos : r0 = 0 -> silence */
+    ldr		r2, =buzzer_restant
+    ldr		r3, [r2]
+    subs	r3, r3, #1				/* une ms de moins dans la phase */
+    str		r3, [r2]
+    bne		bz_calcul				/* phase pas terminée */
+    cmp		r1, #1
+    bne		bz_fin_silence
+    /* fin d'un bip (phase 1) */
+    ldr		r3, =buzzer_bips
+    ldr		r0, [r3]
+    cmp		r0, #0
+    beq		bz_fin_seq				/* plus de bips : on s'arrête */
+    subs	r0, r0, #1
+    str		r0, [r3]				/* buzzer_bips-- */
+    movs	r1, #2					/* -> phase 2 (silence) */
+    str		r1, [r4]
+    movs	r3, #BIP_SILENCE_MS
+    str		r3, [r2]
+    b		bz_calcul
+bz_fin_seq:
+	movs	r1, #0					/* -> phase 0 (repos) */
+	str		r1, [r4]
+	b		bz_calcul
+bz_fin_silence:						/* fin du silence (phase 2) */
+	movs	r1, #1					/* -> phase 1 (son) */
+	str		r1, [r4]
+	movs	r3, #BIP_MS
+	str		r3, [r2]
+bz_calcul:							/* sortie = 1 si phase == 1, sinon 0 */
+	ldr		r1, [r4]
+	cmp		r1, #1
+	ite		eq
+	moveq	r0, #1
+	movne 	r0, #0
+bz_sortie:
     bl      buzzer_set
     pop     {r4, pc}
     .size   buzzer_step, .-buzzer_step
+.ltorg
