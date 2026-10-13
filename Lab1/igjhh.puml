@@ -1,0 +1,26 @@
+@startuml
+
+state "ARRÊT (rouge fixe)" as ARRET
+state "MARCHE_AVANT (verte)" as AVANT
+state "MARCHE_ARRIERE (bleue)" as ARRIERE
+state "ARRÊT_URGENCE (rouge 2 Hz)" as URGENCE
+
+[*] --> ARRET : Reset (E1)
+
+ARRET --> AVANT : User, sens suivant = avant
+AVANT --> ARRET : User
+ARRET --> ARRIERE : User, sens suivant = arrière
+ARRIERE --> ARRET : User
+
+ARRET --> URGENCE : E-Stop (ISR)
+AVANT --> URGENCE : E-Stop (ISR)
+ARRIERE --> URGENCE : E-Stop (ISR)
+
+URGENCE --> URGENCE : User ignoré, Touch En avec E-Stop maintenu refusé
+URGENCE --> ARRET : Touch En avec E-Stop relâché
+
+ARRET --> ARRET : Touch En, bascule touch_enabled
+AVANT --> AVANT : Touch En, bascule touch_enabled
+ARRIERE --> ARRIERE : Touch En, bascule touch_enabled
+
+@enduml
