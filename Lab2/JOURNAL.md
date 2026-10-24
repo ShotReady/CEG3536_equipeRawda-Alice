@@ -2,10 +2,6 @@
 
 Équipe 2 : Rawda Massaoudou Tahirou et Alice Mpabuye — Section : A02 (Groupe 2) — Dépôt Git : https://github.com/ShotReady/CEG3536_equipeRawda-Alice
 
-Projet : `CEG3536_Lab2` (copie du projet du laboratoire 1, complément de démarrage importé). Branche ou dossier Git : `lab2`.
-
-Toutes les vérifications se font au débogueur de STM32CubeIDE (vue SFR, Live Expressions, points d'arrêt), conformément à la version 1.3 de l'énoncé.
-
 ## Suivi du jalon J1
 
 | Laboratoire | Échéancier prévu (J1) | Déroulement réel | Écart et cause |
