@@ -1,0 +1,127 @@
+=== motor_set_pwm_c (-O0) : source C, adresses, code machine, instructions
+
+trace_l3d/l3a_O0.o:     file format elf32-littlearm
+
+
+Disassembly of section .text:
+
+00000000 <motor_set_pwm_c>:
+#include "bench_l3a.h"
+
+#define PWM_PLEINE_C 200u
+
+uint32_t motor_set_pwm_c(uint32_t pct)
+{
+   0:	b480      	push	{r7}
+   2:	b085      	sub	sp, #20
+   4:	af00      	add	r7, sp, #0
+   6:	6078      	str	r0, [r7, #4]
+    /* À COMPLÉTER : même comportement que motor_set_pwm (motor.s, lab. 2). */
+    if (pct > 100u) {
+   8:	687b      	ldr	r3, [r7, #4]
+   a:	2b64      	cmp	r3, #100	@ 0x64
+   c:	d901      	bls.n	12 <motor_set_pwm_c+0x12>
+        pct = 100u;
+   e:	2364      	movs	r3, #100	@ 0x64
+  10:	607b      	str	r3, [r7, #4]
+    }
+    uint32_t ccr1 = (pct * PWM_PLEINE_C) / 100u;
+  12:	687b      	ldr	r3, [r7, #4]
+  14:	22c8      	movs	r2, #200	@ 0xc8
+  16:	fb02 f303 	mul.w	r3, r2, r3
+  1a:	4a07      	ldr	r2, [pc, #28]	@ (38 <motor_set_pwm_c+0x38>)
+  1c:	fba2 2303 	umull	r2, r3, r2, r3
+  20:	095b      	lsrs	r3, r3, #5
+  22:	60fb      	str	r3, [r7, #12]
+    TIM1->CCR1 = ccr1;
+  24:	4a05      	ldr	r2, [pc, #20]	@ (3c <motor_set_pwm_c+0x3c>)
+  26:	68fb      	ldr	r3, [r7, #12]
+  28:	6353      	str	r3, [r2, #52]	@ 0x34
+    return ccr1;
+  2a:	68fb      	ldr	r3, [r7, #12]
+}
+  2c:	4618      	mov	r0, r3
+  2e:	3714      	adds	r7, #20
+  30:	46bd      	mov	sp, r7
+  32:	f85d 7b04 	ldr.w	r7, [sp], #4
+  36:	4770      	bx	lr
+  38:	51eb851f 	.word	0x51eb851f
+  3c:	40012c00 	.word	0x40012c00
+
+=== fsm_sorties (-O0)
+
+trace_l3d/fsm_O0.o:     file format elf32-littlearm
+
+
+Disassembly of section .text:
+
+000002f4 <fsm_sorties>:
+    }
+    (void)motor_set_pwm(pwm_pct);
+}
+
+void fsm_sorties(void)
+{
+ 2f4:	b580      	push	{r7, lr}
+ 2f6:	af00      	add	r7, sp, #0
+    rampe();
+ 2f8:	f7ff ffbc 	bl	274 <rampe>
+    if (etat == ETAT_ARRET_URGENCE) {
+ 2fc:	4b17      	ldr	r3, [pc, #92]	@ (35c <fsm_sorties+0x68>)
+ 2fe:	681b      	ldr	r3, [r3, #0]
+ 300:	2b03      	cmp	r3, #3
+ 302:	d11c      	bne.n	33e <fsm_sorties+0x4a>
+        if (++clignote_compteur >= CLIGNOTEMENT_DEMI_MS) {
+ 304:	4b16      	ldr	r3, [pc, #88]	@ (360 <fsm_sorties+0x6c>)
+ 306:	681b      	ldr	r3, [r3, #0]
+ 308:	3301      	adds	r3, #1
+ 30a:	4a15      	ldr	r2, [pc, #84]	@ (360 <fsm_sorties+0x6c>)
+ 30c:	6013      	str	r3, [r2, #0]
+ 30e:	4b14      	ldr	r3, [pc, #80]	@ (360 <fsm_sorties+0x6c>)
+ 310:	681b      	ldr	r3, [r3, #0]
+ 312:	2bf9      	cmp	r3, #249	@ 0xf9
+ 314:	d908      	bls.n	328 <fsm_sorties+0x34>
+            clignote_compteur = 0u;
+ 316:	4b12      	ldr	r3, [pc, #72]	@ (360 <fsm_sorties+0x6c>)
+ 318:	2200      	movs	r2, #0
+ 31a:	601a      	str	r2, [r3, #0]
+            clignote_phase ^= 1u;
+ 31c:	4b11      	ldr	r3, [pc, #68]	@ (364 <fsm_sorties+0x70>)
+ 31e:	681b      	ldr	r3, [r3, #0]
+ 320:	f083 0301 	eor.w	r3, r3, #1
+ 324:	4a0f      	ldr	r2, [pc, #60]	@ (364 <fsm_sorties+0x70>)
+ 326:	6013      	str	r3, [r2, #0]
+        }
+        led_set(clignote_phase ? LED_ROUGE : LED_AUCUNE);
+ 328:	4b0e      	ldr	r3, [pc, #56]	@ (364 <fsm_sorties+0x70>)
+ 32a:	681b      	ldr	r3, [r3, #0]
+ 32c:	2b00      	cmp	r3, #0
+ 32e:	d001      	beq.n	334 <fsm_sorties+0x40>
+ 330:	2301      	movs	r3, #1
+ 332:	e000      	b.n	336 <fsm_sorties+0x42>
+ 334:	2300      	movs	r3, #0
+ 336:	4618      	mov	r0, r3
+ 338:	f7ff fffe 	bl	0 <led_set>
+ 33c:	e00a      	b.n	354 <fsm_sorties+0x60>
+    } else if (etat <= ETAT_MARCHE_ARRIERE) {
+ 33e:	4b07      	ldr	r3, [pc, #28]	@ (35c <fsm_sorties+0x68>)
+ 340:	681b      	ldr	r3, [r3, #0]
+ 342:	2b02      	cmp	r3, #2
+ 344:	d806      	bhi.n	354 <fsm_sorties+0x60>
+        led_set(etat_vers_del[etat]);
+ 346:	4b05      	ldr	r3, [pc, #20]	@ (35c <fsm_sorties+0x68>)
+ 348:	681b      	ldr	r3, [r3, #0]
+ 34a:	4a07      	ldr	r2, [pc, #28]	@ (368 <fsm_sorties+0x74>)
+ 34c:	5cd3      	ldrb	r3, [r2, r3]
+ 34e:	4618      	mov	r0, r3
+ 350:	f7ff fffe 	bl	0 <led_set>
+    }
+    buzzer_step();
+ 354:	f7ff fffe 	bl	0 <buzzer_step>
+}
+ 358:	bf00      	nop
+ 35a:	bd80      	pop	{r7, pc}
+ 35c:	00000000 	.word	0x00000000
+ 360:	00000020 	.word	0x00000020
+ 364:	00000024 	.word	0x00000024
+ 368:	00000000 	.word	0x00000000

@@ -1,0 +1,33 @@
+=== motor_set_pwm (assembleur, motor.s)
+
+trace_l3d/motor.o:     file format elf32-littlearm
+
+
+Disassembly of section .text:
+
+000000e4 <motor_set_pwm>:
+ * d'impulsion tronquée. Retour r0 = valeur écrite dans CCR1.
+ * Registres modifiés : r0-r2 (routine feuille). FOURNIE.                    */
+    .global motor_set_pwm
+    .type   motor_set_pwm, %function
+motor_set_pwm:
+    cmp     r0, #100
+  e4:	2864      	cmp	r0, #100	@ 0x64
+    it      hi
+  e6:	bf88      	it	hi
+    movhi   r0, #100
+  e8:	2064      	movhi	r0, #100	@ 0x64
+    movs    r1, #PWM_PLEINE
+  ea:	21c8      	movs	r1, #200	@ 0xc8
+    mul     r0, r0, r1                  /* r0 = pct * (ARR + 1)              */
+  ec:	fb00 f001 	mul.w	r0, r0, r1
+    movs    r1, #100
+  f0:	2164      	movs	r1, #100	@ 0x64
+    udiv    r0, r0, r1                  /* r0 = CCR1                         */
+  f2:	fbb0 f0f1 	udiv	r0, r0, r1
+    ldr     r2, =TIM1_BASE
+  f6:	4a21      	ldr	r2, [pc, #132]	@ (17c <motor_stop_now+0x24>)
+    str     r0, [r2, #TIM_CCR1]
+  f8:	6350      	str	r0, [r2, #52]	@ 0x34
+    bx      lr
+  fa:	4770      	bx	lr

@@ -1,0 +1,16 @@
+--- -O0 : taille des fonctions en octets (colonne 2, en hexadécimal)
+00000000 00000040 T motor_set_pwm_c
+0000036c 00000044 T fsm_etat
+000002f4 00000078 T fsm_sorties
+00000084 00000080 T fsm_init
+00000274 00000080 t rampe
+00000000 00000084 t entree_etat
+00000104 00000170 T fsm_traiter
+--- -O2 : taille des fonctions en octets (colonne 2, en hexadécimal)
+00000000 00000014 T motor_set_pwm_c
+000001e8 00000020 T fsm_etat
+000001b8 00000030 T fsm_init
+00000114 000000a4 T fsm_sorties
+00000000 00000114 T fsm_traiter
+--- assembleur : taille de motor_set_pwm
+000000e4 00000018 T motor_set_pwm
