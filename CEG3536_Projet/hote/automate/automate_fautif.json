@@ -1,0 +1,107 @@
+{
+  "nom": "vehicule",
+  "description": "Automate du vehicule autonome (CEG 3536, projet final, E15). Le sens de marche et le mode sont des etats distincts : un changement de sens ou de mode passe donc obligatoirement par PRET. Les entrees sont classees par priorite decroissante (section 4.6) : ESTOP, PANNE (SW5, module muet, encodeur, sens oppose), THERMIQUE (50 C), OBSTACLE, FEU, FIN_TRAJET, puis les actions de l'utilisateur. fsm.c traduit chaque evenement et ses gardes en une de ces entrees.",
+
+  "entrees": ["ESTOP", "PANNE", "THERMIQUE", "OBSTACLE", "FEU", "FIN_TRAJET", "ACQUIT",
+              "USER_ARRET", "DEM_MAN_AV", "DEM_MAN_AR", "DEM_AUTO_AV", "DEM_AUTO_AR", "INIT_OK"],
+
+  "sorties": ["moteur", "sens", "mode_auto", "led", "cause", "son", "etat_tele"],
+  "initial": "INIT",
+
+  "etats": {
+    "INIT":             { "moteur": 0, "sens": 0, "mode_auto": 0, "led": 0, "cause": 0, "son": 0, "etat_tele": 5 },
+    "PRET":             { "moteur": 0, "sens": 0, "mode_auto": 0, "led": 0, "cause": 0, "son": 0, "etat_tele": 0 },
+    "MANUEL_AV":        { "moteur": 1, "sens": 1, "mode_auto": 0, "led": 1, "cause": 0, "son": 0, "etat_tele": 1 },
+    "MANUEL_AR":        { "moteur": 1, "sens": 2, "mode_auto": 0, "led": 2, "cause": 0, "son": 0, "etat_tele": 2 },
+    "AUTO_AV":          { "moteur": 1, "sens": 1, "mode_auto": 1, "led": 1, "cause": 0, "son": 0, "etat_tele": 1 },
+    "AUTO_AR":          { "moteur": 1, "sens": 2, "mode_auto": 1, "led": 2, "cause": 0, "son": 0, "etat_tele": 2 },
+    "ARRET_OBSTACLE":   { "moteur": 0, "sens": 0, "mode_auto": 0, "led": 0, "cause": 3, "son": 2, "etat_tele": 4 },
+    "ARRET_FEU":        { "moteur": 0, "sens": 0, "mode_auto": 0, "led": 0, "cause": 2, "son": 0, "etat_tele": 4 },
+    "ARRET_THERMIQUE":  { "moteur": 0, "sens": 0, "mode_auto": 0, "led": 0, "cause": 5, "son": 2, "etat_tele": 4 },
+    "URGENCE":          { "moteur": 0, "sens": 0, "mode_auto": 0, "led": 3, "cause": 0, "son": 1, "etat_tele": 3 },
+    "DEFAUT":           { "moteur": 0, "sens": 0, "mode_auto": 0, "led": 0, "cause": 4, "son": 3, "etat_tele": 6 }
+  },
+
+  "transitions": [
+    { "de": "*", "sur": "ESTOP", "vers": "URGENCE" },
+
+    { "de": ["INIT", "PRET", "MANUEL_AV", "MANUEL_AR", "AUTO_AV", "AUTO_AR",
+             "ARRET_OBSTACLE", "ARRET_FEU", "ARRET_THERMIQUE"], "sur": "PANNE", "vers": "DEFAUT" },
+    { "de": ["URGENCE", "DEFAUT"], "sur": "PANNE", "vers": "=" },
+
+    { "de": ["MANUEL_AV", "MANUEL_AR", "AUTO_AV", "AUTO_AR"], "sur": "THERMIQUE", "vers": "ARRET_THERMIQUE" },
+    { "de": ["ARRET_OBSTACLE", "ARRET_FEU"], "sur": "THERMIQUE", "vers": "ARRET_THERMIQUE" },
+    { "de": ["INIT", "PRET", "ARRET_THERMIQUE", "URGENCE", "DEFAUT"], "sur": "THERMIQUE", "vers": "=" },
+
+    { "de": ["MANUEL_AV", "MANUEL_AR", "AUTO_AV", "AUTO_AR"], "sur": "OBSTACLE", "vers": "ARRET_OBSTACLE" },
+    { "de": "ARRET_FEU", "sur": "OBSTACLE", "vers": "ARRET_OBSTACLE" },
+    { "de": ["INIT", "PRET", "ARRET_OBSTACLE", "ARRET_THERMIQUE", "URGENCE", "DEFAUT"], "sur": "OBSTACLE", "vers": "=" },
+
+    { "de": ["AUTO_AV", "AUTO_AR"], "sur": "FEU", "vers": "ARRET_FEU" },
+    { "de": ["INIT", "PRET", "MANUEL_AV", "MANUEL_AR", "ARRET_OBSTACLE", "ARRET_FEU",
+             "ARRET_THERMIQUE", "URGENCE", "DEFAUT"], "sur": "FEU", "vers": "=" },
+
+    { "de": ["AUTO_AV", "AUTO_AR"], "sur": "FIN_TRAJET", "vers": "PRET" },
+    { "de": ["INIT", "PRET", "MANUEL_AV", "MANUEL_AR", "ARRET_OBSTACLE", "ARRET_FEU",
+             "ARRET_THERMIQUE", "URGENCE", "DEFAUT"], "sur": "FIN_TRAJET", "vers": "=" },
+
+    { "de": ["URGENCE", "ARRET_OBSTACLE", "ARRET_FEU", "ARRET_THERMIQUE"], "sur": "ACQUIT", "vers": "PRET" },
+    { "de": "DEFAUT", "sur": "ACQUIT", "vers": "MANUEL_AV" },
+    { "de": ["INIT", "PRET", "MANUEL_AV", "MANUEL_AR", "AUTO_AV", "AUTO_AR"], "sur": "ACQUIT", "vers": "=" },
+
+    { "de": ["MANUEL_AV", "MANUEL_AR", "AUTO_AV", "AUTO_AR"], "sur": "USER_ARRET", "vers": "PRET" },
+    { "de": ["INIT", "PRET", "ARRET_OBSTACLE", "ARRET_FEU", "ARRET_THERMIQUE", "URGENCE", "DEFAUT"],
+      "sur": "USER_ARRET", "vers": "=" },
+
+    { "de": "PRET", "sur": "DEM_MAN_AV",  "vers": "MANUEL_AV" },
+    { "de": "PRET", "sur": "DEM_MAN_AR",  "vers": "MANUEL_AR" },
+    { "de": "PRET", "sur": "DEM_AUTO_AV", "vers": "AUTO_AV" },
+    { "de": "PRET", "sur": "DEM_AUTO_AR", "vers": "AUTO_AR" },
+    { "de": ["INIT", "MANUEL_AV", "MANUEL_AR", "AUTO_AV", "AUTO_AR", "ARRET_OBSTACLE", "ARRET_FEU",
+             "ARRET_THERMIQUE", "URGENCE", "DEFAUT"],
+      "sur": ["DEM_MAN_AV", "DEM_MAN_AR", "DEM_AUTO_AV", "DEM_AUTO_AR"], "vers": "=" },
+
+    { "de": "INIT", "sur": "INIT_OK", "vers": "PRET" },
+    { "de": ["PRET", "MANUEL_AV", "MANUEL_AR", "AUTO_AV", "AUTO_AR", "ARRET_OBSTACLE", "ARRET_FEU",
+             "ARRET_THERMIQUE", "URGENCE", "DEFAUT"], "sur": "INIT_OK", "vers": "=" }
+  ],
+
+  "invariants": [
+    { "nom": "moteur autorise faux dans INIT, PRET, ARRET_x, URGENCE et DEFAUT",
+      "type": "sortie",
+      "etats": ["INIT", "PRET", "ARRET_OBSTACLE", "ARRET_FEU", "ARRET_THERMIQUE", "URGENCE", "DEFAUT"],
+      "sortie": "moteur", "valeur": 0 },
+    { "nom": "aucune reprise directe d'un arret ou d'un defaut vers MANUEL ou AUTONOME",
+      "type": "interdit",
+      "de": ["INIT", "ARRET_OBSTACLE", "ARRET_FEU", "ARRET_THERMIQUE", "URGENCE", "DEFAUT"],
+      "vers": ["MANUEL_AV", "MANUEL_AR", "AUTO_AV", "AUTO_AR"] },
+    { "nom": "ESTOP mene a URGENCE depuis tous les etats",
+      "type": "toujours", "sur": "ESTOP", "vers": "URGENCE" },
+    { "nom": "changement de sens ou de mode seulement par PRET (manuel)",
+      "type": "interdit", "de": ["MANUEL_AV"], "vers": ["MANUEL_AR", "AUTO_AV", "AUTO_AR"] },
+    { "nom": "changement de sens ou de mode seulement par PRET (manuel arriere)",
+      "type": "interdit", "de": ["MANUEL_AR"], "vers": ["MANUEL_AV", "AUTO_AV", "AUTO_AR"] },
+    { "nom": "changement de sens ou de mode seulement par PRET (autonome)",
+      "type": "interdit", "de": ["AUTO_AV"], "vers": ["AUTO_AR", "MANUEL_AV", "MANUEL_AR"] },
+    { "nom": "changement de sens ou de mode seulement par PRET (autonome arriere)",
+      "type": "interdit", "de": ["AUTO_AR"], "vers": ["AUTO_AV", "MANUEL_AV", "MANUEL_AR"] },
+    { "nom": "moteur arrete implique sens nul",
+      "type": "sortie", "si": { "moteur": 0 }, "alors": { "sens": 0 } },
+    { "nom": "moteur autorise implique aucune cause d'arret",
+      "type": "sortie", "si": { "moteur": 1 }, "alors": { "cause": 0, "son": 0 } },
+    { "nom": "mode autonome implique moteur autorise (DEL Y2 seulement en marche)",
+      "type": "sortie", "si": { "mode_auto": 1 }, "alors": { "moteur": 1 } },
+    { "nom": "le son continu n'existe qu'en URGENCE",
+      "type": "sortie", "si": { "son": 1 }, "alors": { "etat_tele": 3 } },
+    { "nom": "PANNE mene a DEFAUT sauf en URGENCE et DEFAUT",
+      "type": "toujours", "sur": "PANNE", "vers": "DEFAUT", "sauf": ["URGENCE", "DEFAUT"] },
+    { "nom": "URGENCE ne se quitte que vers PRET",
+      "type": "interdit", "de": ["URGENCE"],
+      "vers": ["INIT", "MANUEL_AV", "MANUEL_AR", "AUTO_AV", "AUTO_AR", "ARRET_OBSTACLE", "ARRET_FEU",
+               "ARRET_THERMIQUE", "DEFAUT"] },
+    { "nom": "aucun etat piege : PRET reste atteignable",
+      "type": "retour", "vers": "PRET" },
+    { "nom": "tous les etats sont accessibles",
+      "type": "accessible" }
+  ]
+}

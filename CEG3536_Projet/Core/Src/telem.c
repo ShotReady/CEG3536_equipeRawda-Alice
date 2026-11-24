@@ -13,6 +13,7 @@
  * ------------------------------------------------------------------------- */
 #include "stm32l552xx.h"
 #include "telem.h"
+#include "projet.h"
 
 #define TX_TAILLE 1024u
 static char     tx_file[TX_TAILLE];
@@ -129,8 +130,9 @@ void telem_entete(void)
 {
     static const char texte[] = "H,ticks_ms,etat,sens,consigne_pct,pwm_pct,temp_c_x10,vitesse_rpm_x100,"
                                 "nb_evenements,evq_debordements,mode,cause,plafond_pct,env_t_x10,"
-                                "env_h_x10,env_p_x10,i2c_erreurs,ticks_perdus";
-    char ligne[192];
+                                "env_h_x10,env_p_x10,i2c_erreurs,ticks_perdus,mode_essai,segment,dist_x10,"
+                                "consigne_rpm,code_defaut,evq_max,crit_max_cycles";
+    char ligne[320];
     char *p = ligne;
 
     for (const char *s = texte; *s != '\0'; s++) {
@@ -170,7 +172,7 @@ void telem_trame(const etat_vehicule_t *v, int32_t temp_c_x10,
                  const env_mesure_t *env, uint32_t i2c_erreurs,
                  uint32_t ticks_perdus)
 {
-    char ligne[160];
+    char ligne[224];
     char *p = ligne;
     uint32_t rpm_x100 = (uint32_t)(((uint64_t)v->vitesse_rpm_q16 * 100u + 32768u) >> 16);
 
@@ -191,6 +193,13 @@ void telem_trame(const etat_vehicule_t *v, int32_t temp_c_x10,
     p = telem_fmt_u32(p, env->valide ? env->h_x10 : 0u);          *p++ = ',';
     p = telem_fmt_u32(p, env->valide ? env->p_hpa_x10 : 0u);      *p++ = ',';
     p = telem_fmt_u32(p, i2c_erreurs);       *p++ = ',';
-    p = telem_fmt_u32(p, ticks_perdus);
+    p = telem_fmt_u32(p, ticks_perdus);      *p++ = ',';
+    p = telem_fmt_u32(p, v->mode_essai);     *p++ = ',';
+    p = telem_fmt_u32(p, v->segment);        *p++ = ',';
+    p = telem_fmt_u32(p, v->dist_x10);       *p++ = ',';
+    p = telem_fmt_u32(p, v->consigne_rpm);   *p++ = ',';
+    p = telem_fmt_u32(p, v->code_defaut);    *p++ = ',';
+    p = telem_fmt_u32(p, evq_max());         *p++ = ',';
+    p = telem_fmt_u32(p, crit_max_cycles);
     terminer_ligne(ligne, p);
 }

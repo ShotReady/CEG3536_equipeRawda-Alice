@@ -1,0 +1,16 @@
+# Sequence 4 : priorites, arret thermique et echec de l'initialisation
+PANNE           # INIT -> DEFAUT (ressource absente)
+INIT_OK         # sans effet hors INIT
+ACQUIT          # DEFAUT -> PRET
+DEM_MAN_AR
+THERMIQUE       # MANUEL_AR -> ARRET_THERMIQUE
+OBSTACLE        # sans effet : moins prioritaire
+FEU             # sans effet : moins prioritaire
+PANNE           # ARRET_THERMIQUE -> DEFAUT (plus prioritaire)
+ESTOP           # DEFAUT -> URGENCE
+THERMIQUE       # sans effet en URGENCE
+ACQUIT          # URGENCE -> PRET
+DEM_AUTO_AV
+OBSTACLE        # AUTO_AV -> ARRET_OBSTACLE
+THERMIQUE       # ARRET_OBSTACLE -> ARRET_THERMIQUE
+ACQUIT          # ARRET_THERMIQUE -> PRET

@@ -15,12 +15,12 @@
 /* Vitesse de l'arbre de sortie en tr/min, format Q16.16, pour une fenêtre de
  * FENETRE_VITESSE_MS = 250 ms : tr/min = fronts x 240 / 748 = fronts x k / 65536
  * avec k = round(240 x 65536 / 748) = 21028 (erreur relative +0,002 %).       */
-#define RPM_Q16_K           21028u
+#define RPM_Q16_K           52569u
 uint32_t enc_fronts_vers_rpm_q16(uint32_t fronts);
 
 /* ---- Constantes de la couche C ----------------------------------------- */
 #define HORLOGE_HZ_C        4000000u /* MSI après réinitialisation (SystemInit vide) */
-#define FENETRE_VITESSE_MS  250u    /* propre au lab. 3 (lab. 2 : 500 ms)       */
+#define FENETRE_VITESSE_MS  100u    /* propre au lab. 3 (lab. 2 : 500 ms)       */
 #define RAMPE_PAS_MS        10u
 #define CLIGNOTEMENT_DEMI_MS 250u
 #define TELEM_PERIODE_MS    200u    /* télémétrie à 5 Hz (E10)                  */

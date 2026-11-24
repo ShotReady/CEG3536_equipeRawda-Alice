@@ -1,0 +1,14 @@
+# Sequence 3 : arret d'urgence, defaut et acquittements
+INIT_OK
+DEM_MAN_AV
+ESTOP           # MANUEL_AV -> URGENCE
+PANNE           # sans effet en URGENCE
+DEM_MAN_AV      # sans effet en URGENCE
+ACQUIT          # URGENCE -> PRET
+PANNE           # PRET -> DEFAUT
+DEM_AUTO_AV     # sans effet en DEFAUT
+ACQUIT          # DEFAUT -> PRET
+DEM_AUTO_AV     # PRET -> AUTO_AV
+PANNE           # AUTO_AV -> DEFAUT
+ESTOP           # DEFAUT -> URGENCE
+ACQUIT          # URGENCE -> PRET

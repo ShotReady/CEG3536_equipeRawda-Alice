@@ -58,6 +58,14 @@ static uint32_t placer_fixe1(char l[17], uint32_t col, int32_t x10, uint32_t lar
     return col + largeur;
 }
 
+static uint32_t trajet_nb, trajet_total;
+
+void tableau_trajet_definir(uint32_t nb_segments, uint32_t total_tours)
+{
+    trajet_nb = nb_segments;
+    trajet_total = total_tours;
+}
+
 static void placer_entier3(char l[17], uint32_t col, uint32_t x)
 {
     if (x > 999u) {
@@ -78,7 +86,14 @@ static const char *texte_etat(const etat_vehicule_t *v)
         return "MARCHE";
     case ETAT_ARRET_URGENCE:
         return "URGENCE";
+    case ETAT_INIT:
+        return "INIT";
+    case ETAT_DEFAUT:
+        return "DEFAUT";
     default:
+        if (v->cause == CAUSE_THERMIQUE) {
+            return "THERMIQUE";
+        }
         if (v->cause == CAUSE_OBSTACLE) {
             return "OBSTACLE";
         }
@@ -98,6 +113,9 @@ static void page_conduite(const etat_vehicule_t *v, char l1[17], char l2[17])
     uint32_t x10 = (uint32_t)(((uint64_t)v->vitesse_rpm_q16 * 10u + 32768u) >> 16);
 
     placer(l1, 0u, (v->mode == MODE_AUTONOME) ? "AUT" : "MAN");
+    if (v->mode_essai != 0u || (v->drapeaux & DRAPEAU_ESSAI) != 0u) {
+        l1[3] = '*';
+    }
     if (v->etat == ETAT_MARCHE_AVANT) {
         placer(l1, 4u, "AV");
     } else if (v->etat == ETAT_MARCHE_ARRIERE) {
@@ -105,7 +123,7 @@ static void page_conduite(const etat_vehicule_t *v, char l1[17], char l2[17])
     } else {
         placer(l1, 4u, "--");
     }
-    placer(l1, 7u, texte_etat(v));
+    placer(l1, 7u, ((v->drapeaux & DRAPEAU_FILE) != 0u) ? "FILE" : texte_etat(v));
 
     l2[0] = 'C';
     placer_entier3(l2, 1u, v->consigne_pct);
@@ -114,6 +132,45 @@ static void page_conduite(const etat_vehicule_t *v, char l1[17], char l2[17])
     col = placer_fixe1(l2, 7u, (int32_t)x10, 6u);
     l2[col + 1u] = 'P';
     l2[col + 2u] = (v->plafond_pct >= 100u) ? 'X' : (char)('0' + (v->plafond_pct / 10u) % 10u);
+}
+
+static void page_trajet(const etat_vehicule_t *v, char l1[17], char l2[17])
+{
+    uint32_t x10 = (uint32_t)(((uint64_t)v->vitesse_rpm_q16 * 10u + 32768u) >> 16);
+    uint32_t col;
+
+    l1[0] = 'S';
+    l1[1] = (char)('0' + v->segment % 10u);
+    l1[2] = '/';
+    l1[3] = (char)('0' + trajet_nb % 10u);
+    l1[5] = 'D';
+    placer_entier3(l1, 7u, v->dist_x10 / 10u);
+    l1[10] = '.';
+    l1[11] = (char)('0' + v->dist_x10 % 10u);
+    l1[12] = '/';
+    placer_entier3(l1, 13u, trajet_total);
+
+    l2[0] = 'R';
+    l2[5] = 'V';
+    col = placer_fixe1(l2, 6u, (int32_t)x10, 5u);
+    if (v->mode == MODE_AUTONOME && v->consigne_rpm != 0u) {
+        uint32_t c10 = v->consigne_rpm * 10u;
+        int32_t  ecart = (int32_t)c10 - (int32_t)x10;
+        uint32_t a = (ecart < 0) ? (uint32_t)(-ecart) : (uint32_t)ecart;
+        uint32_t pct = (a * 100u + c10 / 2u) / c10;
+
+        if (pct > 99u) {
+            pct = 99u;
+        }
+        placer_entier3(l2, 1u, v->consigne_rpm);
+        l2[col + 1u] = (ecart < 0) ? '-' : '+';
+        l2[col + 2u] = (char)('0' + pct / 10u);
+        l2[col + 3u] = (char)('0' + pct % 10u);
+    } else {
+        placer(l2, 1u, "---");
+        placer(l2, col + 1u, "---");
+    }
+    l2[15] = '%';
 }
 
 static void page_capteurs(const env_mesure_t *m, char l1[17], char l2[17])
@@ -147,6 +204,8 @@ void tableau_formater(const etat_vehicule_t *v, const env_mesure_t *m,
      *     (uint32_t)(((uint64_t)v->vitesse_rpm_q16 * 10u + 32768u) >> 16)     */
     if (page == PAGE_CAPTEURS) {
         page_capteurs(m, l1, l2);
+    } else if (page == PAGE_TRAJET) {
+        page_trajet(v, l1, l2);
     } else {
         page_conduite(v, l1, l2);
         if (page == PAGE_VERROU) {
@@ -179,7 +238,7 @@ uint8_t tableau_del(const etat_vehicule_t *v)
     if ((v->drapeaux & DRAPEAU_OBSTACLE) != 0u) {
         image |= DEL_R2;
     }
-    if ((v->drapeaux & DRAPEAU_DEFAUT) != 0u) {
+    if ((v->drapeaux & (DRAPEAU_DEFAUT | DRAPEAU_THERMIQUE)) != 0u || v->etat == ETAT_DEFAUT) {
         image |= DEL_R3;
     }
     if (v->etat == ETAT_ARRET_URGENCE) {

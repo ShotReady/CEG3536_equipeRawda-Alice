@@ -1,0 +1,11 @@
+# Sequence 2 : trajet autonome, feu rouge, obstacle, fin de trajet
+INIT_OK
+DEM_AUTO_AV     # PRET -> AUTO_AV
+FEU             # AUTO_AV -> ARRET_FEU
+OBSTACLE        # ARRET_FEU -> ARRET_OBSTACLE (plus prioritaire)
+FEU             # sans effet : moins prioritaire
+ACQUIT          # ARRET_OBSTACLE -> PRET
+DEM_AUTO_AR     # PRET -> AUTO_AR
+FIN_TRAJET      # AUTO_AR -> PRET
+FEU             # sans effet en PRET
+OBSTACLE        # sans effet en PRET

@@ -113,6 +113,9 @@ typedef struct {
 #define TRAJET_REF_N            4u
 extern const segment_t TRAJET_REF[TRAJET_REF_N];    /* défini dans trajet.c       */
 
+#define TRAJET_2_N              3u
+extern const segment_t TRAJET_2[TRAJET_2_N];
+
 /* ---- Types d'événements à ajouter À LA FIN de evq_type_t (evq.h) ---------
  *     EV_THERMIQUE,   13 : niveau thermique changé ; valeur = SURV_THERM_x
  *     EV_FIN,         14 : fin du dernier segment du trajet

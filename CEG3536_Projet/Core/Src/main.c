@@ -27,6 +27,15 @@
 #include "touchpad.h"
 #include "env.h"
 #include "tableau.h"
+#include "tableau_test.h"
+#include "somme_test.h"
+#include "projet.h"
+#include "trajet.h"
+#include "regul.h"
+#include "surv.h"
+#include "essai.h"
+#include "crit_test.h"
+#include "automate_gen.h"
 
 #define TP_RELIRE_MS        50u
 #define COMMUT_N_VALIDATION (COMMUT_ANTIREBOND_MS / COMMUT_PERIODE_MS)
@@ -34,6 +43,10 @@
 #define BIT_DEL             (1u << 1)
 #define BIT_COMMUT          (1u << 2)
 #define BIT_TOUCHPAD        (1u << 3)
+#define INIT_ATTENTE_MS     300u
+#define ENV_ID_ATTENDU      0x61u
+#define TEMP_PLAUSIBLE_MIN  (-300)
+#define TEMP_PLAUSIBLE_MAX  1200
 
 /* tampon DMA : ADC_N_MOY échantillons par voie, entrelacés IN1, IN2, ... */
 static volatile uint16_t tampon_adc[ADC_N_VOIES * ADC_N_MOY];
@@ -50,6 +63,8 @@ static uint16_t     tp_etat;
 static uint32_t     tp_echecs, tp_t_echec, tp_a_relire;
 static uint32_t     commut_t, defauts_signales;
 static uint8_t      commut_compteur[8];
+static regul_t      regul;
+static uint32_t     trajet_num = 1u;
 
 void SystemInit(void)
 {
@@ -71,6 +86,55 @@ static void reponse_u32(const char *etiquette, uint32_t v)
     p = telem_fmt_u32(p, v);
     *p++ = '\r'; *p++ = '\n'; *p = '\0';
     telem_put(ligne);
+}
+
+static void reponse_autotest_auto(void)
+{
+    static const char chiffres[] = "0123456789ABCDEF";
+    char ligne[64];
+    char *p = ligne;
+    const char *s = "G,echecs=";
+    uint32_t ecarts = automate_autotest();
+
+    while (*s) *p++ = *s++;
+    p = telem_fmt_u32(p, ecarts);
+    s = ",somme=";
+    while (*s) *p++ = *s++;
+    for (int32_t i = 28; i >= 0; i -= 4) {
+        *p++ = chiffres[(AUTO_SOMME >> i) & 0xFu];
+    }
+    *p++ = '\r'; *p++ = '\n'; *p = '\0';
+    telem_put(ligne);
+}
+
+static uint32_t verifier_ressources(const uint8_t *adresses, uint32_t n, uint32_t fronts)
+{
+    static const uint8_t requises[5] = { I2C_ADR_RVB, I2C_ADR_DEL, I2C_ADR_COMMUT,
+                                         I2C_ADR_LCD, I2C_ADR_TOUCHPAD };
+    int32_t temp = acq_valeur(&acq_temp);
+
+    for (uint32_t r = 0u; r < 5u; r++) {
+        uint32_t present = 0u;
+
+        for (uint32_t i = 0u; i < n; i++) {
+            if (adresses[i] == requises[r]) {
+                present = 1u;
+            }
+        }
+        if (!present) {
+            return DEFAUT_INIT;
+        }
+    }
+    if (env_identifiant() != ENV_ID_ATTENDU) {
+        return DEFAUT_INIT;
+    }
+    if (acq_mv(&acq_pot) > ADC_VREF_MV + 100u || temp < TEMP_PLAUSIBLE_MIN || temp > TEMP_PLAUSIBLE_MAX) {
+        return DEFAUT_INIT;
+    }
+    if (fronts != 0u) {
+        return DEFAUT_INIT;
+    }
+    return DEFAUT_AUCUN;
 }
 
 static void suivre_defaut(uint32_t bit, uint8_t adr, uint32_t echecs, uint32_t t)
@@ -163,6 +227,8 @@ int main(void)
     uint32_t n_adresses;
     int32_t  derniere_consigne = -1;
     evq_event_t e;
+    uint32_t init_fait = 0u, auto_prec = 0u, fin_signale = 0u;
+    uint32_t code_prec = DEFAUT_AUCUN, therm_prec = SURV_THERM_NORMAL, deb_prec = 0u;
 
     /* couche assembleur (sorties en état sûr avant les interruptions) */
     gpio_init();
@@ -174,6 +240,11 @@ int main(void)
     /* couche C */
     dwt_init();
     evq_init();
+    crit_rafale_init();
+    essai_init();
+    surv_init();
+    trajet_init(TRAJET_REF, TRAJET_REF_N);
+    regul_init(&regul, REGUL_KP_Q8, REGUL_KI_Q8);
     adc_dma_init(tampon_adc, ADC_N_MOY);
     /* potentiomètre : % = mv x 100 / 3300 ; version 2 : zone morte 3 %, hystérésis 2 */
     acq_init(&acq_pot, &tampon_adc[0], ADC_N_VOIES, ADC_N_MOY, 100, (int32_t)ADC_VREF_MV, 0);
@@ -238,6 +309,46 @@ int main(void)
             fenetre = 0u;
             uint32_t fronts = encoder_read(&sens_mesure);
             evq_push(EV_VITESSE, fronts, t);
+            if (PARTIE_II) {
+                uint32_t rpm = (enc_fronts_vers_rpm_q16(fronts) + 32768u) >> 16;
+                uint32_t autonome = fsm_autonome_actif() ? 1u : 0u;
+                uint32_t consigne_rpm, plafond_pwm, pwm, code, niveau;
+
+                if (autonome && !auto_prec) {
+                    if (trajet_fini()) {
+                        trajet_reset();
+                    }
+                    fin_signale = 0u;
+                }
+                auto_prec = autonome;
+                if (autonome) {
+                    trajet_avancer(fronts);
+                    consigne_rpm = fsm_regulation(trajet_consigne_rpm(), &plafond_pwm);
+                    pwm = regul_step(&regul, consigne_rpm, rpm, plafond_pwm);
+                    fsm_pwm_regule(pwm);
+                    if (trajet_fini() && !fin_signale) {
+                        fin_signale = 1u;
+                        evq_push(EV_FIN, 0u, t);
+                    }
+                } else {
+                    regul_reset(&regul);
+                }
+                fsm_trajet_exposer(trajet_segment(), trajet_dist_x10());
+                surv_step(fsm_etat(), essai_sens(sens_mesure), essai_fronts(fronts),
+                          essai_temp_c10(acq_valeur(&acq_temp)), FENETRE_VITESSE_MS);
+                code = surv_code();
+                if (code != code_prec) {
+                    code_prec = code;
+                    if (code != DEFAUT_AUCUN) {
+                        evq_push(EV_DEFAUT, EV_DEFAUT_CODE_BASE + code, t);
+                    }
+                }
+                niveau = surv_thermique();
+                if (niveau != therm_prec) {
+                    therm_prec = niveau;
+                    evq_push(EV_THERMIQUE, niveau, t);
+                }
+            }
         }
         int32_t c = acq_valeur(&acq_pot);
         if (c != derniere_consigne) {
@@ -251,15 +362,32 @@ int main(void)
         adc_dma_step();
         env_step();
         if (env_mesure(&env_cour)) {
+            env_cour.h_x10 = essai_hum_x10(env_cour.h_x10);
             evq_push(EV_ENV, env_cour.h_x10, t);
         }
-        env_cour.ta_c10 = acq_valeur(&acq_temp);
+        env_cour.ta_c10 = essai_temp_c10(acq_valeur(&acq_temp));
         tableau_env(&env_cour);
+
+        if (PARTIE_II && !init_fait && t >= INIT_ATTENTE_MS) {
+            uint32_t code_init = verifier_ressources(adresses, n_adresses, encoder_read(&sens_mesure));
+
+            init_fait = 1u;
+            if (code_init == DEFAUT_AUCUN) {
+                fsm_init_fin(DEFAUT_AUCUN);
+            } else {
+                evq_push(EV_DEFAUT, EV_DEFAUT_CODE_BASE + code_init, t);
+            }
+        }
+        if (evq_debordements() != deb_prec) {
+            deb_prec = evq_debordements();
+            fsm_message_file();
+        }
 
         /* --- commandes série facultatives --- */
         int rx = telem_rx();
         if (rx == 'z') {
             evq_init();
+            deb_prec = 0u;
             derniere_consigne = -1;
             telem_put("Z,ok\r\n");
         } else if (rx == 't') {
@@ -277,26 +405,75 @@ int main(void)
         } else if (rx == 'd') {
             i2c_simuler_absence(I2C_ADR_LCD, ABSENCE_SIMULEE_MS);
             telem_put("D,ok\r\n");
+        } else if (rx == 'x') {
+            reponse_u32("X,echecs=", somme_autotest());
+        } else if (rx == 'i') {
+            n_adresses = i2c_scan(adresses, sizeof adresses);
+            telem_balayage(adresses, n_adresses);
         } else if (rx == 'a') {
             reponse_u32("A,pot_brut=", acq_brut(&acq_pot));
             reponse_u32("A,pot_mv=", acq_mv(&acq_pot));
             reponse_u32("A,temp_brut=", acq_brut(&acq_temp));
             reponse_u32("A,temp_mv=", acq_mv(&acq_temp));
             reponse_u32("A,tours_dma=", adc_dma_tours());
+        } else if (rx == 'e') {
+            crit_rafale(ESSAI_RAFALE_N);
+            telem_put("E,rafale\r\n");
+        } else if (rx == 'r') {
+            if (etat == ETAT_ARRET) {
+                trajet_reset();
+                telem_put("R,ok\r\n");
+            } else {
+                telem_put("R,refuse (ARRET requis)\r\n");
+            }
+        } else if (rx == 'j') {
+            if (etat == ETAT_ARRET) {
+                trajet_num = (trajet_num == 1u) ? 2u : 1u;
+                if (trajet_num == 1u) {
+                    trajet_init(TRAJET_REF, TRAJET_REF_N);
+                } else {
+                    trajet_init(TRAJET_2, TRAJET_2_N);
+                }
+                reponse_u32("J,trajet=", trajet_num);
+            } else {
+                telem_put("J,refuse (ARRET requis)\r\n");
+            }
+        } else if (rx == 'c') {
+            reponse_u32("C,echecs=", crit_autotest());
+        } else if (rx == 'g') {
+            reponse_autotest_auto();
+        } else if (rx == 'f') {
+            reponse_u32("F,echecs=", tableau_autotest());
+        } else if (rx == 'm' || rx == '1' || rx == '2' || rx == '3'
+                   || rx == 'h' || rx == 's' || rx == 'n') {
+            if (essai_commande((char)rx)) {
+                fsm_essai(essai_actif() ? 1u : 0u);
+                evq_push(EV_ESSAI, (uint32_t)rx, t);
+            } else {
+                telem_put("M,refuse (mode essai requis)\r\n");
+            }
         }
 
         /* --- consommateur : machine à états --- */
         while (evq_pop(&e)) {
             if (e.type == EV_TELEM) {
-                telem_trame(fsm_etat(), acq_valeur(&acq_temp), evq_total(), evq_debordements(),
+                telem_trame(fsm_etat(), essai_temp_c10(acq_valeur(&acq_temp)), evq_total(), evq_debordements(),
                             &env_cour, i2c_erreurs(), ticks_perdus);
             } else {
                 if (e.type == EV_PIR || e.type == EV_TOUCHE || e.type == EV_COMMUT
-                    || e.type == EV_ESTOP || e.type == EV_DEFAUT) {
+                    || e.type == EV_ESTOP || e.type == EV_DEFAUT
+                    || e.type == EV_THERMIQUE || e.type == EV_FIN || e.type == EV_ESSAI) {
                     telem_evenement(&e);
                 }
                 if (e.type == EV_COMMUT && e.valeur == SW_PAGE) {
                     tableau_page_basculer();
+                }
+                if (PARTIE_II && e.type == EV_COMMUT && e.valeur == SW_TRAJET && etat == ETAT_ARRET) {
+                    trajet_reset();
+                }
+                if (PARTIE_II && e.type == EV_COMMUT && e.valeur == SW_ESSAI) {
+                    essai_basculer();
+                    fsm_essai(essai_actif() ? 1u : 0u);
                 }
                 fsm_traiter(&e);
             }

@@ -12,6 +12,7 @@
 #include "fsm.h"
 #include "lcd.h"
 #include "tableau.h"
+#include "trajet.h"
 
 #define RVB_FORT    0xFFu
 #define RVB_ETEINT  0x00u
@@ -34,7 +35,13 @@ void tableau_init(void)
 /* [FOURNI] */
 void tableau_page_basculer(void)
 {
-    page = (page == PAGE_CONDUITE) ? PAGE_CAPTEURS : PAGE_CONDUITE;
+    if (page == PAGE_CONDUITE) {
+        page = PAGE_CAPTEURS;
+    } else if (page == PAGE_CAPTEURS) {
+        page = PAGE_TRAJET;
+    } else {
+        page = PAGE_CONDUITE;
+    }
 }
 
 /* [FOURNI] */
@@ -72,8 +79,14 @@ void tableau_step(void)
     lcd_ligne(0u, l1);
     lcd_ligne(1u, l2);
 
+    tableau_trajet_definir(trajet_nb_segments(), trajet_total_tours());
+
     /* [FOURNI] DEL */
     image_del = tableau_del(v);
+    if ((v->drapeaux & DRAPEAU_THERMIQUE) != 0u && (v->drapeaux & DRAPEAU_DEFAUT) == 0u
+        && v->etat != ETAT_DEFAUT && ((ticks_ms / CLIGNOTEMENT_DEMI_MS) & 1u) != 0u) {
+        image_del &= (uint8_t)~DEL_R3;
+    }
 
     /* À COMPLÉTER — rétroéclairage (E3) : la couleur de la DEL active de la
      * Nucleo (rouge, vert ou bleu selon v->etat, comme dans fsm_sorties), et
@@ -89,7 +102,7 @@ void tableau_step(void)
         r = RVB_ETEINT;
         b = RVB_FORT;
     }
-    if ((v->etat == ETAT_ARRET_URGENCE || v->etat == ETAT_ARRET_EVENEMENT)
+    if ((v->etat == ETAT_ARRET_URGENCE || v->etat == ETAT_ARRET_EVENEMENT || v->etat == ETAT_DEFAUT)
         && ((ticks_ms / CLIGNOTEMENT_DEMI_MS) & 1u) != 0u) {
         r = vert = b = RVB_ETEINT;
     }

@@ -1,0 +1,9 @@
+# Sequence 1 : demarrage nominal, marche manuelle avant puis arriere
+INIT_OK         # INIT -> PRET
+DEM_MAN_AV      # PRET -> MANUEL_AV
+USER_ARRET      # MANUEL_AV -> PRET
+DEM_MAN_AR      # PRET -> MANUEL_AR
+DEM_MAN_AV      # sans effet : changement de sens interdit en marche
+USER_ARRET      # MANUEL_AR -> PRET
+ACQUIT          # sans effet en PRET
+INIT_OK         # sans effet hors INIT

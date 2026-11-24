@@ -22,6 +22,12 @@ const segment_t TRAJET_REF[TRAJET_REF_N] = {
     { 30u, 200u },      /* S4 : nouvelle accélération, puis fin de trajet    */
 };
 
+const segment_t TRAJET_2[TRAJET_2_N] = {
+    { 10u, 120u },
+    { 25u, 300u },
+    { 15u, 80u },
+};
+
 static const segment_t *segments;   /* trajet courant                        */
 static uint32_t nb_segments;
 /* À COMPLÉTER : distance parcourue en fronts, distance totale, ...          */

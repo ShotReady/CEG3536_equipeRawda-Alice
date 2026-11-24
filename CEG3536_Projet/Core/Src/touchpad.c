@@ -61,7 +61,7 @@ static bool ecrire_reg(uint8_t reg, uint8_t val)
  * qui monte dans l'état lu ; consigner la table dans JOURNAL.md).
  * Valeurs : 0 à 9, TOUCHE_FN, TOUCHE_NEXT ; -1 = électrode sans touche connue. */
 const int8_t tp_table[TP_N_ELECTRODES] = {
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, TOUCHE_FN, TOUCHE_NEXT
 };
 
 bool tp_init(void)

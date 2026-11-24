@@ -20,7 +20,7 @@
     .cpu    cortex-m33
     .thumb
 
-    .equ RPM_Q16_K, 21028       /* identique à lab3.h                         */
+    .equ RPM_Q16_K, 52569       /* identique à lab3.h                         */
 
     .text
     .align  2

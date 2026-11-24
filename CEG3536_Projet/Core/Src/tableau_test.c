@@ -49,6 +49,11 @@ static etat_vehicule_t vehicule(uint32_t mode, uint32_t etat, uint32_t cause,
     v.cause = cause;
     v.plafond_pct = plafond;
     v.drapeaux = 0u;
+    v.consigne_rpm = 0u;
+    v.segment = 0u;
+    v.dist_x10 = 0u;
+    v.code_defaut = 0u;
+    v.mode_essai = 0u;
     return v;
 }
 
@@ -139,6 +144,65 @@ uint32_t tableau_autotest(void)
     v = vehicule(MODE_MANUEL, ETAT_MARCHE_AVANT, CAUSE_AUCUNE, 100u, 80904192u, 90u);
     tableau_formater(&v, &m, PAGE_CONDUITE, l1, l2);
     echecs += cas_ok(12u, egal(l2, "C100% V1234.5 P9"));
+
+    tableau_trajet_definir(4u, 105u);
+
+    v = vehicule(MODE_AUTONOME, ETAT_MARCHE_AVANT, CAUSE_AUCUNE, 60u, 16075981u, 90u);
+    v.mode_essai = 1u;
+    tableau_formater(&v, &m, PAGE_CONDUITE, l1, l2);
+    echecs += cas_ok(13u, egal(l1, "AUT*AV MARCHE   ") && egal(l2, "C060% V 245.3 P9"));
+
+    v = vehicule(MODE_MANUEL, ETAT_INIT, CAUSE_AUCUNE, 0u, 0u, 100u);
+    tableau_formater(&v, &m, PAGE_CONDUITE, l1, l2);
+    echecs += cas_ok(14u, egal(l1, "MAN -- INIT     "));
+
+    v = vehicule(MODE_AUTONOME, ETAT_DEFAUT, CAUSE_DEFAUT, 0u, 0u, 100u);
+    tableau_formater(&v, &m, PAGE_CONDUITE, l1, l2);
+    echecs += cas_ok(15u, egal(l1, "AUT -- DEFAUT   "));
+
+    v = vehicule(MODE_AUTONOME, ETAT_ARRET_EVENEMENT, CAUSE_THERMIQUE, 0u, 0u, 100u);
+    tableau_formater(&v, &m, PAGE_CONDUITE, l1, l2);
+    echecs += cas_ok(16u, egal(l1, "AUT -- THERMIQUE"));
+
+    v = vehicule(MODE_AUTONOME, ETAT_MARCHE_AVANT, CAUSE_AUCUNE, 60u, 0u, 100u);
+    v.drapeaux = DRAPEAU_FILE;
+    tableau_formater(&v, &m, PAGE_CONDUITE, l1, l2);
+    echecs += cas_ok(17u, egal(l1, "AUT AV FILE     "));
+
+    v = vehicule(MODE_AUTONOME, ETAT_MARCHE_AVANT, CAUSE_AUCUNE, 60u, 16075981u, 90u);
+    v.consigne_rpm = 250u;
+    v.segment = 2u;
+    v.dist_x10 = 125u;
+    tableau_formater(&v, &m, PAGE_TRAJET, l1, l2);
+    echecs += cas_ok(18u, egal(l1, "S2/4 D 012.5/105") && egal(l2, "R250 V245.3 +02%"));
+
+    v.mode = MODE_MANUEL;
+    v.consigne_rpm = 0u;
+    v.segment = 0u;
+    tableau_formater(&v, &m, PAGE_TRAJET, l1, l2);
+    echecs += cas_ok(19u, egal(l1, "S0/4 D 012.5/105") && egal(l2, "R--- V245.3 ---%"));
+
+    v = vehicule(MODE_AUTONOME, ETAT_MARCHE_AVANT, CAUSE_AUCUNE, 60u, 6553600u, 90u);
+    v.consigne_rpm = 80u;
+    v.segment = 1u;
+    tableau_formater(&v, &m, PAGE_TRAJET, l1, l2);
+    echecs += cas_ok(20u, egal(l2, "R080 V100.0 -25%"));
+
+    v = vehicule(MODE_AUTONOME, ETAT_MARCHE_AVANT, CAUSE_AUCUNE, 60u, 0u, 90u);
+    v.consigne_rpm = 300u;
+    v.segment = 4u;
+    v.dist_x10 = 1049u;
+    tableau_formater(&v, &m, PAGE_TRAJET, l1, l2);
+    echecs += cas_ok(21u, egal(l1, "S4/4 D 104.9/105") && egal(l2, "R300 V  0.0 +99%"));
+
+    {
+        int ok;
+        v = vehicule(MODE_AUTONOME, ETAT_ARRET_EVENEMENT, CAUSE_THERMIQUE, 0u, 0u, 100u);
+        v.drapeaux = DRAPEAU_THERMIQUE | DRAPEAU_FIN;
+        ok = tableau_del(&v) == (DEL_Y2 | DEL_Y4 | DEL_R3);
+        v = vehicule(MODE_AUTONOME, ETAT_DEFAUT, CAUSE_DEFAUT, 0u, 0u, 100u);
+        echecs += cas_ok(22u, ok && tableau_del(&v) == (DEL_Y2 | DEL_R3));
+    }
 
     return echecs;
 }

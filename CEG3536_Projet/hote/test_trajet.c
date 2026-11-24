@@ -97,5 +97,14 @@ int main(void)
     /* À COMPLÉTER : au moins deux cas de l'équipe (trajet de l'équipe, reprise
      * après un arrêt, trajet d'un seul segment, ...)                         */
 
+    trajet_init(TRAJET_2, TRAJET_2_N);
+    VERIFIER(trajet_total_tours() == 50u && trajet_nb_segments() == 3u && trajet_consigne_rpm() == 120u,
+             "trajet de l'equipe : 50 tours, 3 segments, depart a 120 tr/min");
+    trajet_avancer(35u * TOUR);
+    VERIFIER(trajet_segment() == 3u && trajet_consigne_rpm() == 80u && trajet_dist_x10() == 350u,
+             "trajet de l'equipe : segment 3 a 35 tours, 80 tr/min");
+    trajet_avancer(15u * TOUR);
+    VERIFIER(trajet_fini() && trajet_dist_x10() == 500u, "trajet de l'equipe : fini a 50 tours");
+
     return banc_bilan("test_trajet");
 }

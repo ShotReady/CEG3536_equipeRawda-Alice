@@ -1,0 +1,16 @@
+0 - -> INIT moteur=0 sens=0 mode_auto=0 led=0 cause=0 son=0 etat_tele=5
+1 PANNE -> DEFAUT moteur=0 sens=0 mode_auto=0 led=0 cause=4 son=3 etat_tele=6
+2 INIT_OK -> DEFAUT moteur=0 sens=0 mode_auto=0 led=0 cause=4 son=3 etat_tele=6
+3 ACQUIT -> PRET moteur=0 sens=0 mode_auto=0 led=0 cause=0 son=0 etat_tele=0
+4 DEM_MAN_AR -> MANUEL_AR moteur=1 sens=2 mode_auto=0 led=2 cause=0 son=0 etat_tele=2
+5 THERMIQUE -> ARRET_THERMIQUE moteur=0 sens=0 mode_auto=0 led=0 cause=5 son=2 etat_tele=4
+6 OBSTACLE -> ARRET_THERMIQUE moteur=0 sens=0 mode_auto=0 led=0 cause=5 son=2 etat_tele=4
+7 FEU -> ARRET_THERMIQUE moteur=0 sens=0 mode_auto=0 led=0 cause=5 son=2 etat_tele=4
+8 PANNE -> DEFAUT moteur=0 sens=0 mode_auto=0 led=0 cause=4 son=3 etat_tele=6
+9 ESTOP -> URGENCE moteur=0 sens=0 mode_auto=0 led=3 cause=0 son=1 etat_tele=3
+10 THERMIQUE -> URGENCE moteur=0 sens=0 mode_auto=0 led=3 cause=0 son=1 etat_tele=3
+11 ACQUIT -> PRET moteur=0 sens=0 mode_auto=0 led=0 cause=0 son=0 etat_tele=0
+12 DEM_AUTO_AV -> AUTO_AV moteur=1 sens=1 mode_auto=1 led=1 cause=0 son=0 etat_tele=1
+13 OBSTACLE -> ARRET_OBSTACLE moteur=0 sens=0 mode_auto=0 led=0 cause=3 son=2 etat_tele=4
+14 THERMIQUE -> ARRET_THERMIQUE moteur=0 sens=0 mode_auto=0 led=0 cause=5 son=2 etat_tele=4
+15 ACQUIT -> PRET moteur=0 sens=0 mode_auto=0 led=0 cause=0 son=0 etat_tele=0

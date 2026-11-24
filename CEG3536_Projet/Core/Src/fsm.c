@@ -16,6 +16,9 @@
  * ------------------------------------------------------------------------- */
 #include "fsm.h"
 #include "lab4.h"
+#include "projet.h"
+#include "automate_gen.h"
+#include "surv.h"
 #include "stm32l552xx.h"
 
 /* variables déclarées extern volatile dans lab1.h / lab2.h */
@@ -30,15 +33,19 @@ static uint32_t prochain_sens;      /* 0 : prochain départ en avant           *
 static uint32_t rampe_compteur, clignote_compteur, clignote_phase;
 static etat_vehicule_t expose;
 
-static const uint8_t etat_vers_del[5]  = { LED_ROUGE, LED_VERTE, LED_BLEUE, LED_ROUGE, LED_ROUGE };
-static const uint8_t etat_vers_dir[5]  = { MOTOR_ARRET, MOTOR_AVANT, MOTOR_ARRIERE, MOTOR_ARRET, MOTOR_ARRET };
-static const uint8_t etat_vers_bips[5] = { 1u, 1u, 2u, 0u, 0u };
+static const uint8_t etat_vers_del[7]  = { LED_ROUGE, LED_VERTE, LED_BLEUE, LED_ROUGE, LED_ROUGE, LED_ROUGE, LED_ROUGE };
+static const uint8_t etat_vers_dir[7]  = { MOTOR_ARRET, MOTOR_AVANT, MOTOR_ARRIERE, MOTOR_ARRET, MOTOR_ARRET, MOTOR_ARRET, MOTOR_ARRET };
+static const uint8_t etat_vers_bips[7] = { 1u, 1u, 2u, 0u, 0u, 0u, 0u };
 
 #define PIR_BROCHE      9u
 
 static uint32_t mode, cause, plafond_pct, drapeaux;
 static uint32_t sw_feu, sw_obstacle, sw_limitation, sw_fin, sw_defaut;
 static uint32_t hum_limite, defauts_i2c, defaut_tp, bip_compteur;
+static auto_etat_t as;
+static uint32_t therm_niveau, fin_trajet, defaut_surv, defaut_init;
+static uint32_t consigne_auto_rpm, consigne_auto_pct, traj_segment, traj_dist_x10;
+static uint32_t essai_actif, file_actif, file_debut;
 
 static uint32_t en_marche(void)
 {
@@ -62,9 +69,14 @@ static uint32_t bit_module(uint32_t adr)
     }
 }
 
-static uint32_t defaut_actif(void)
+static uint32_t defaut_vivant(void)
 {
     return (mode == MODE_AUTONOME && sw_defaut) || defauts_i2c != 0u;
+}
+
+static uint32_t defaut_actif(void)
+{
+    return defaut_vivant() || defaut_surv != 0u || defaut_init != 0u;
 }
 
 static uint32_t obstacle_actif(void)
@@ -79,13 +91,17 @@ static uint32_t feu_actif(void)
 
 static uint32_t limitation_active(void)
 {
-    return hum_limite || (mode == MODE_AUTONOME && sw_limitation);
+    return hum_limite || (mode == MODE_AUTONOME && sw_limitation)
+        || (PARTIE_II && therm_niveau >= SURV_THERM_LIMITATION);
 }
 
 static uint32_t cause_active(void)
 {
     if (defaut_actif()) {
         return CAUSE_DEFAUT;
+    }
+    if (PARTIE_II && therm_niveau == SURV_THERM_ARRET) {
+        return CAUSE_THERMIQUE;
     }
     if (obstacle_actif()) {
         return CAUSE_OBSTACLE;
@@ -94,6 +110,41 @@ static uint32_t cause_active(void)
         return CAUSE_FEU;
     }
     return CAUSE_AUCUNE;
+}
+
+static uint32_t etat_de(auto_etat_t a)
+{
+    switch (a) {
+    case AUTO_ETAT_INIT:
+        return ETAT_INIT;
+    case AUTO_ETAT_MANUEL_AV:
+    case AUTO_ETAT_AUTO_AV:
+        return ETAT_MARCHE_AVANT;
+    case AUTO_ETAT_MANUEL_AR:
+    case AUTO_ETAT_AUTO_AR:
+        return ETAT_MARCHE_ARRIERE;
+    case AUTO_ETAT_ARRET_OBSTACLE:
+    case AUTO_ETAT_ARRET_FEU:
+    case AUTO_ETAT_ARRET_THERMIQUE:
+        return ETAT_ARRET_EVENEMENT;
+    case AUTO_ETAT_URGENCE:
+        return ETAT_ARRET_URGENCE;
+    case AUTO_ETAT_DEFAUT:
+        return PARTIE_II ? ETAT_DEFAUT : ETAT_ARRET_EVENEMENT;
+    default:
+        return ETAT_ARRET;
+    }
+}
+
+static uint32_t cause_de(auto_etat_t a)
+{
+    switch (a) {
+    case AUTO_ETAT_ARRET_OBSTACLE: return CAUSE_OBSTACLE;
+    case AUTO_ETAT_ARRET_FEU:      return CAUSE_FEU;
+    case AUTO_ETAT_ARRET_THERMIQUE: return CAUSE_THERMIQUE;
+    case AUTO_ETAT_DEFAUT:         return CAUSE_DEFAUT;
+    default:                       return CAUSE_AUCUNE;
+    }
 }
 
 static void entree_etat(uint32_t nouvel_etat)
@@ -116,28 +167,113 @@ static void arret_evenement(uint32_t c)
     motor_stop_now();
     cause = c;
     bip_compteur = 0u;
-    entree_etat(ETAT_ARRET_EVENEMENT);
+    entree_etat(etat_de(as));
     if (c != CAUSE_FEU) {
         buzzer_bip(1u);
     }
 }
 
-static void acquitter_urgence(void)
+static void appliquer(auto_entree_t x)
 {
-    if (button_raw(BTN_ESTOP) == 0u) {
+    auto_etat_t prec = as;
+    auto_etat_t suiv = automate_transition(prec, x, 0);
+
+    if (suiv == prec) {
+        return;
+    }
+    as = suiv;
+    switch (suiv) {
+    case AUTO_ETAT_PRET:
+        if (x == AUTO_ENTREE_ACQUIT && prec == AUTO_ETAT_DEFAUT) {
+            surv_acquitter();
+            defaut_surv = 0u;
+            defaut_init = 0u;
+        }
         buzzer_continu = 0u;
-        cause = CAUSE_AUCUNE;
+        cause = (x == AUTO_ENTREE_FIN_TRAJET) ? CAUSE_FIN : CAUSE_AUCUNE;
+        defaut_tp = 0u;
         entree_etat(ETAT_ARRET);
+        break;
+    case AUTO_ETAT_MANUEL_AV:
+    case AUTO_ETAT_MANUEL_AR:
+    case AUTO_ETAT_AUTO_AV:
+    case AUTO_ETAT_AUTO_AR:
+        cause = CAUSE_AUCUNE;
+        sw_fin = 0u;
+        fin_trajet = 0u;
+        entree_etat(etat_de(suiv));
+        prochain_sens ^= 1u;
+        break;
+    case AUTO_ETAT_ARRET_OBSTACLE:
+    case AUTO_ETAT_ARRET_FEU:
+    case AUTO_ETAT_ARRET_THERMIQUE:
+    case AUTO_ETAT_DEFAUT:
+        if (etat_de(prec) == etat_de(suiv)) {
+            cause = cause_de(suiv);
+        } else {
+            arret_evenement(cause_de(suiv));
+        }
+        break;
+    case AUTO_ETAT_URGENCE:
+        etat = ETAT_ARRET_URGENCE;
+        compteur_transitions++;
+        break;
+    default:
+        break;
     }
 }
 
-static void acquitter_evenement(void)
+static uint32_t acquit_permis(void)
 {
-    if (cause_active() == CAUSE_AUCUNE) {
-        cause = CAUSE_AUCUNE;
-        defaut_tp = 0u;
-        entree_etat(ETAT_ARRET);
+    switch (as) {
+    case AUTO_ETAT_URGENCE:
+        return button_raw(BTN_ESTOP) == 0u;
+    case AUTO_ETAT_DEFAUT:
+        return !defaut_vivant();
+    case AUTO_ETAT_ARRET_OBSTACLE:
+    case AUTO_ETAT_ARRET_FEU:
+    case AUTO_ETAT_ARRET_THERMIQUE:
+        return cause_active() == CAUSE_AUCUNE;
+    default:
+        return 0u;
     }
+}
+
+static void acquitter(void)
+{
+    if (acquit_permis()) {
+        appliquer(AUTO_ENTREE_ACQUIT);
+    }
+}
+
+static uint32_t niveaux(void)
+{
+    uint32_t masque = 0u;
+
+    if (defaut_actif()) {
+        masque |= 1u << AUTO_ENTREE_PANNE;
+    }
+    if (PARTIE_II && therm_niveau == SURV_THERM_ARRET) {
+        masque |= 1u << AUTO_ENTREE_THERMIQUE;
+    }
+    if (obstacle_actif()) {
+        masque |= 1u << AUTO_ENTREE_OBSTACLE;
+    }
+    if (feu_actif()) {
+        masque |= 1u << AUTO_ENTREE_FEU;
+    }
+    if ((mode == MODE_AUTONOME && sw_fin) || fin_trajet) {
+        masque |= 1u << AUTO_ENTREE_FIN_TRAJET;
+    }
+    return masque;
+}
+
+static auto_entree_t demande_depart(void)
+{
+    if (mode == MODE_AUTONOME) {
+        return prochain_sens ? AUTO_ENTREE_DEM_AUTO_AR : AUTO_ENTREE_DEM_AUTO_AV;
+    }
+    return prochain_sens ? AUTO_ENTREE_DEM_MAN_AR : AUTO_ENTREE_DEM_MAN_AV;
 }
 
 static void changer_mode(void)
@@ -155,13 +291,10 @@ static void traiter_touche(uint32_t touche)
         plafond_pct = (touche == 0u) ? 100u : touche * 10u;
         buzzer_bip(1u);
     } else if (touche == (uint32_t)TOUCHE_FN) {
-        if (etat == ETAT_ARRET_URGENCE) {
-            acquitter_urgence();
-        } else if (etat == ETAT_ARRET_EVENEMENT) {
-            acquitter_evenement();
-        }
+        acquitter();
+        buzzer_bip(1u);
     } else if (touche == (uint32_t)TOUCHE_NEXT) {
-        if (etat == ETAT_ARRET) {
+        if (as == AUTO_ETAT_PRET) {
             changer_mode();
             buzzer_bip(1u);
         }
@@ -185,8 +318,19 @@ static void traiter_commutateur(uint32_t sw)
 
 static void traiter_defaut(uint32_t valeur)
 {
-    uint32_t bit = bit_module(valeur & ~DEFAUT_I2C_RETABLI);
+    uint32_t bit;
 
+    if (valeur >= EV_DEFAUT_CODE_BASE) {
+        uint32_t code = valeur - EV_DEFAUT_CODE_BASE;
+
+        if (code == DEFAUT_SENS || code == DEFAUT_ENCODEUR) {
+            defaut_surv = code;
+        } else if (code == DEFAUT_INIT) {
+            defaut_init = code;
+        }
+        return;
+    }
+    bit = bit_module(valeur & ~DEFAUT_I2C_RETABLI);
     if ((valeur & DEFAUT_I2C_RETABLI) != 0u) {
         defauts_i2c &= ~bit;
     } else {
@@ -199,23 +343,10 @@ static void traiter_defaut(uint32_t valeur)
 
 static void surveiller(void)
 {
-    uint32_t c = cause_active();
+    auto_entree_t x = automate_choisir(niveaux());
 
-    if (en_marche()) {
-        if (c != CAUSE_AUCUNE) {
-            arret_evenement(c);
-        } else if (mode == MODE_AUTONOME && sw_fin) {
-            cause = CAUSE_FIN;
-            entree_etat(ETAT_ARRET);
-        }
-    } else if (etat == ETAT_ARRET) {
-        if (c == CAUSE_DEFAUT) {
-            arret_evenement(c);
-        }
-    } else if (etat == ETAT_ARRET_EVENEMENT) {
-        if (c != CAUSE_AUCUNE) {
-            cause = c;
-        }
+    if (x != AUTO_N_ENTREES) {
+        appliquer(x);
     }
 }
 
@@ -227,7 +358,11 @@ static void recalculer_consigne(void)
         consigne_pct = 0u;
         return;
     }
-    c = (mode == MODE_AUTONOME) ? CONSIGNE_AUTO_PCT : consigne_pot;
+    if (PARTIE_II && mode == MODE_AUTONOME) {
+        c = consigne_auto_pct;
+    } else {
+        c = (mode == MODE_AUTONOME) ? CONSIGNE_AUTO_PCT : consigne_pot;
+    }
     if (c > plafond_pct) {
         c = plafond_pct;
     }
@@ -246,7 +381,7 @@ static void calculer_drapeaux(void)
     if (touch_enabled) {
         drapeaux |= DRAPEAU_TOUCH;
     }
-    if (mode == MODE_AUTONOME && sw_fin) {
+    if (mode == MODE_AUTONOME && (sw_fin || fin_trajet)) {
         drapeaux |= DRAPEAU_FIN;
     }
     if (feu_actif()) {
@@ -257,6 +392,17 @@ static void calculer_drapeaux(void)
     }
     if (defaut_actif()) {
         drapeaux |= DRAPEAU_DEFAUT;
+    }
+    if (PARTIE_II && therm_niveau == SURV_THERM_ARRET) {
+        drapeaux |= DRAPEAU_THERMIQUE;
+    }
+    if (essai_actif) {
+        drapeaux |= DRAPEAU_ESSAI;
+    }
+    if (file_actif && (ticks_ms - file_debut) < FILE_MESSAGE_MS) {
+        drapeaux |= DRAPEAU_FILE;
+    } else {
+        file_actif = 0u;
     }
 }
 
@@ -275,8 +421,16 @@ void fsm_init(void)
     drapeaux = 0u;
     sw_feu = sw_obstacle = sw_limitation = sw_fin = sw_defaut = 0u;
     hum_limite = defauts_i2c = defaut_tp = bip_compteur = 0u;
+    therm_niveau = fin_trajet = defaut_surv = defaut_init = 0u;
+    consigne_auto_rpm = consigne_auto_pct = traj_segment = traj_dist_x10 = 0u;
+    essai_actif = file_actif = file_debut = 0u;
     (void)motor_set_dir(MOTOR_ARRET);
-    etat = ETAT_ARRET;
+    as = AUTO_ETAT_INITIAL;
+    etat = ETAT_INIT;
+    if (!PARTIE_II) {
+        as = automate_transition(as, AUTO_ENTREE_INIT_OK, 0);
+        etat = ETAT_ARRET;
+    }
     pwm_pct = 0u;
     consigne_pct = 0u;
     compteur_transitions = 0u;                  /* fsm_init ne compte pas      */
@@ -294,29 +448,23 @@ void fsm_traiter(const evq_event_t *e)
         cause = CAUSE_AUCUNE;
         clignote_compteur = 0u;
         clignote_phase = 1u;
-        if (etat != ETAT_ARRET_URGENCE) {
-            etat = ETAT_ARRET_URGENCE;
-            compteur_transitions++;
-        }
+        appliquer(AUTO_ENTREE_ESTOP);
         break;
 
     case EV_USER:
-        if (etat == ETAT_ARRET) {
-            cause = CAUSE_AUCUNE;
-            sw_fin = 0u;
-            entree_etat(prochain_sens ? ETAT_MARCHE_ARRIERE : ETAT_MARCHE_AVANT);
-            prochain_sens ^= 1u;
-        } else if (etat == ETAT_MARCHE_AVANT || etat == ETAT_MARCHE_ARRIERE) {
-            entree_etat(ETAT_ARRET);
+        if (as == AUTO_ETAT_PRET) {
+            appliquer(demande_depart());
+        } else if (en_marche()) {
+            appliquer(AUTO_ENTREE_USER_ARRET);
         }
         /* ARRÊT_URGENCE : User ignoré (E9) */
         break;
 
     case EV_TOUCH:
-        if (etat == ETAT_ARRET_URGENCE) {
-            acquitter_urgence();                /* acquittement (E9)           */
-        } else if (etat == ETAT_ARRET_EVENEMENT && cause == CAUSE_DEFAUT && defaut_tp) {
-            acquitter_evenement();
+        if (as == AUTO_ETAT_URGENCE) {
+            acquitter();                        /* acquittement (E9)           */
+        } else if (as == AUTO_ETAT_DEFAUT && defaut_tp) {
+            acquitter();
         } else {
             touch_enabled ^= 1u;                /* laboratoire 1, pour le lab. 4 */
             buzzer_bip(1u);
@@ -338,9 +486,7 @@ void fsm_traiter(const evq_event_t *e)
 
     case EV_PIR:
         if (en_marche()) {
-            uint32_t c = cause_active();
-
-            arret_evenement((c > CAUSE_OBSTACLE) ? c : CAUSE_OBSTACLE);
+            appliquer(automate_choisir(niveaux() | (1u << AUTO_ENTREE_OBSTACLE)));
         }
         break;
 
@@ -360,6 +506,16 @@ void fsm_traiter(const evq_event_t *e)
         traiter_defaut(e->valeur);
         break;
 
+    case EV_THERMIQUE:
+        therm_niveau = e->valeur;
+        break;
+
+    case EV_FIN:
+        if (mode == MODE_AUTONOME && en_marche()) {
+            fin_trajet = 1u;
+        }
+        break;
+
     default:
         break;
     }
@@ -368,6 +524,9 @@ void fsm_traiter(const evq_event_t *e)
 static void rampe(void)
 {
     if (etat != ETAT_MARCHE_AVANT && etat != ETAT_MARCHE_ARRIERE) {
+        return;
+    }
+    if (PARTIE_II && mode == MODE_AUTONOME) {
         return;
     }
     if (++rampe_compteur < RAMPE_PAS_MS) {
@@ -390,7 +549,7 @@ void fsm_sorties(void)
     recalculer_consigne();
     calculer_drapeaux();
     rampe();
-    if (etat == ETAT_ARRET_EVENEMENT && cause == CAUSE_OBSTACLE) {
+    if (etat == ETAT_ARRET_EVENEMENT && (cause == CAUSE_OBSTACLE || cause == CAUSE_THERMIQUE)) {
         if (++bip_compteur >= BIP_OBSTACLE_MS) {
             bip_compteur = 0u;
             buzzer_bip(1u);
@@ -404,7 +563,7 @@ void fsm_sorties(void)
             clignote_phase ^= 1u;
         }
         led_set(clignote_phase ? LED_ROUGE : LED_AUCUNE);
-    } else if (etat <= ETAT_ARRET_EVENEMENT) {
+    } else if (etat <= ETAT_DEFAUT) {
         led_set(etat_vers_del[etat]);
     }
     buzzer_step();
@@ -420,5 +579,85 @@ const etat_vehicule_t *fsm_etat(void)
     expose.cause = cause;
     expose.plafond_pct = plafond_pct;
     expose.drapeaux = drapeaux;
+    expose.consigne_rpm = fsm_autonome_actif() ? consigne_auto_rpm : 0u;
+    expose.segment = (mode == MODE_AUTONOME) ? traj_segment : 0u;
+    expose.dist_x10 = traj_dist_x10;
+    expose.mode_essai = essai_actif;
+    if (defaut_init != 0u) {
+        expose.code_defaut = DEFAUT_INIT;
+    } else if (defaut_surv != 0u) {
+        expose.code_defaut = defaut_surv;
+    } else if (defauts_i2c != 0u) {
+        expose.code_defaut = DEFAUT_I2C;
+    } else if (mode == MODE_AUTONOME && sw_defaut) {
+        expose.code_defaut = DEFAUT_SIMULE;
+    } else {
+        expose.code_defaut = DEFAUT_AUCUN;
+    }
     return &expose;
+}
+
+void fsm_init_fin(uint32_t code_defaut)
+{
+    if (as != AUTO_ETAT_INIT) {
+        return;
+    }
+    if (code_defaut == DEFAUT_AUCUN) {
+        appliquer(AUTO_ENTREE_INIT_OK);
+    } else {
+        defaut_init = code_defaut;
+        appliquer(AUTO_ENTREE_PANNE);
+    }
+}
+
+uint32_t fsm_regulation(uint32_t consigne_trajet_rpm, uint32_t *plafond_pwm_pct)
+{
+    uint32_t c = consigne_trajet_rpm;
+    uint32_t borne = plafond_pct * VITESSE_MAX_RPM / 100u;
+
+    if (c > borne) {
+        c = borne;
+    }
+    if (limitation_active()) {
+        borne = LIMITATION_PCT * VITESSE_MAX_RPM / 100u;
+        if (c > borne) {
+            c = borne;
+        }
+    }
+    consigne_auto_rpm = c;
+    consigne_auto_pct = c * 100u / VITESSE_MAX_RPM;
+    if (plafond_pwm_pct != 0) {
+        *plafond_pwm_pct = plafond_pct;
+    }
+    return c;
+}
+
+void fsm_pwm_regule(uint32_t pwm_pct_voulu)
+{
+    if (PARTIE_II && fsm_autonome_actif()) {
+        pwm_pct = (pwm_pct_voulu > 100u) ? 100u : pwm_pct_voulu;
+        (void)motor_set_pwm(pwm_pct);
+    }
+}
+
+bool fsm_autonome_actif(void)
+{
+    return as == AUTO_ETAT_AUTO_AV || as == AUTO_ETAT_AUTO_AR;
+}
+
+void fsm_trajet_exposer(uint32_t segment, uint32_t dist_x10)
+{
+    traj_segment = segment;
+    traj_dist_x10 = dist_x10;
+}
+
+void fsm_essai(uint32_t actif)
+{
+    essai_actif = actif;
+}
+
+void fsm_message_file(void)
+{
+    file_actif = 1u;
+    file_debut = ticks_ms;
 }

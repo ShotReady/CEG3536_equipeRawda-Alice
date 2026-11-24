@@ -41,6 +41,7 @@
 
 #include <stdint.h>
 #include "lab4.h"
+#include "projet.h"
 
 /* ---- tableau.c : sans matériel ----------------------------------------- */
 void tableau_formater(const etat_vehicule_t *v, const env_mesure_t *m,
@@ -51,6 +52,7 @@ void tableau_formater(const etat_vehicule_t *v, const env_mesure_t *m,
  *   Y4 = DRAPEAU_FIN          R1 = DRAPEAU_FEU        R2 = DRAPEAU_OBSTACLE
  *   R3 = DRAPEAU_DEFAUT       R4 = état ARRÊT_URGENCE                        */
 uint8_t tableau_del(const etat_vehicule_t *v);
+void    tableau_trajet_definir(uint32_t nb_segments, uint32_t total_tours);
 
 /* ---- tableau_pres.c : présentation -------------------------------------- */
 void    tableau_init(void);
