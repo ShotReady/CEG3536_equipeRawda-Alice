@@ -44,7 +44,7 @@ typedef struct {
 
 static const l4a_param_t param[4] = {
     /* adresse  toucher relâche rebond courant service ordre rang */
-    {  0x5Au,   12u,    6u,     0x11u, 0x10u,  0x80u,  0u,   0u },
+    {  0x5Au,   12u,    6u,     0x11u, 0x10u,  0x8cu,  0u,   0u },
     {  0x5Au,   15u,    8u,     0x00u, 0x10u,  0x8Cu,  0u,   1u },
     {  0xB4u,   12u,    6u,     0x11u, 0x20u,  0x8Cu,  0u,   0u },
     {  0x5Au,   10u,    5u,     0x22u, 0x10u,  0x8Cu,  1u,   0u },

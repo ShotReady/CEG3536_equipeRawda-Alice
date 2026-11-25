@@ -1,0 +1,62 @@
+automate.py 1.0 — rapport de verification
+table      : automate_fautif.json  (automate « vehicule »)
+somme      : 9687CB17  (empreinte de la table; reprise dans le code genere)
+etats      : 11 (11 accessibles) — initial : INIT
+entrees    : 13, par priorite decroissante : ESTOP, PANNE, THERMIQUE, OBSTACLE, FEU, FIN_TRAJET, ACQUIT, USER_ARRET, DEM_MAN_AV, DEM_MAN_AR, DEM_AUTO_AV, DEM_AUTO_AR, INIT_OK
+sorties    : moteur, sens, mode_auto, led, cause, son, etat_tele
+couples    : 143 (etat accessible, entree) explores; 25 transitions ecrites
+ 
+TABLE DE TRANSITIONS (ligne = etat, colonne = entree; « . » = rester; « ? » = absente)
+                  ESTOP           PANNE           THERMIQUE       OBSTACLE        FEU             FIN_TRAJET      ACQUIT          USER_ARRET      DEM_MAN_AV      DEM_MAN_AR      DEM_AUTO_AV     DEM_AUTO_AR     INIT_OK        
+  INIT            URGENCE         DEFAUT          .               .               .               .               .               .               .               .               .               .               PRET
+  PRET            URGENCE         DEFAUT          .               .               .               .               .               .               MANUEL_AV       MANUEL_AR       AUTO_AV         AUTO_AR         .
+  MANUEL_AV       URGENCE         DEFAUT          ARRET_THERMIQUE ARRET_OBSTACLE  .               .               .               PRET            .               .               .               .               .
+  MANUEL_AR       URGENCE         DEFAUT          ARRET_THERMIQUE ARRET_OBSTACLE  .               .               .               PRET            .               .               .               .               .
+  AUTO_AV         URGENCE         DEFAUT          ARRET_THERMIQUE ARRET_OBSTACLE  ARRET_FEU       PRET            .               PRET            .               .               .               .               .
+  AUTO_AR         URGENCE         DEFAUT          ARRET_THERMIQUE ARRET_OBSTACLE  ARRET_FEU       PRET            .               PRET            .               .               .               .               .
+  ARRET_OBSTACLE  URGENCE         DEFAUT          ARRET_THERMIQUE .               .               .               PRET            .               .               .               .               .               .
+  ARRET_FEU       URGENCE         DEFAUT          ARRET_THERMIQUE ARRET_OBSTACLE  .               .               PRET            .               .               .               .               .               .
+  ARRET_THERMIQUE URGENCE         DEFAUT          .               .               .               .               PRET            .               .               .               .               .               .
+  URGENCE         .               .               .               .               .               .               PRET            .               .               .               .               .               .
+  DEFAUT          URGENCE         .               .               .               .               .               MANUEL_AV       .               .               .               .               .               .
+ 
+SORTIES PAR ETAT
+  INIT            moteur=0  sens=0  mode_auto=0  led=0  cause=0  son=0  etat_tele=5
+  PRET            moteur=0  sens=0  mode_auto=0  led=0  cause=0  son=0  etat_tele=0
+  MANUEL_AV       moteur=1  sens=1  mode_auto=0  led=1  cause=0  son=0  etat_tele=1
+  MANUEL_AR       moteur=1  sens=2  mode_auto=0  led=2  cause=0  son=0  etat_tele=2
+  AUTO_AV         moteur=1  sens=1  mode_auto=1  led=1  cause=0  son=0  etat_tele=1
+  AUTO_AR         moteur=1  sens=2  mode_auto=1  led=2  cause=0  son=0  etat_tele=2
+  ARRET_OBSTACLE  moteur=0  sens=0  mode_auto=0  led=0  cause=3  son=2  etat_tele=4
+  ARRET_FEU       moteur=0  sens=0  mode_auto=0  led=0  cause=2  son=0  etat_tele=4
+  ARRET_THERMIQUE moteur=0  sens=0  mode_auto=0  led=0  cause=5  son=2  etat_tele=4
+  URGENCE         moteur=0  sens=0  mode_auto=0  led=3  cause=0  son=1  etat_tele=3
+  DEFAUT          moteur=0  sens=0  mode_auto=0  led=0  cause=4  son=3  etat_tele=6
+ 
+CONTROLES
+  determinisme : OK
+  completude   : OK
+  invariant  1 (sortie) : OK     moteur autorise faux dans INIT, PRET, ARRET_x, URGENCE et DEFAUT
+  invariant  2 (interdit) : ECHEC  aucune reprise directe d'un arret ou d'un defaut vers MANUEL ou AUTONOME
+  invariant  3 (toujours) : OK     ESTOP mene a URGENCE depuis tous les etats
+  invariant  4 (interdit) : OK     changement de sens ou de mode seulement par PRET (manuel)
+  invariant  5 (interdit) : OK     changement de sens ou de mode seulement par PRET (manuel arriere)
+  invariant  6 (interdit) : OK     changement de sens ou de mode seulement par PRET (autonome)
+  invariant  7 (interdit) : OK     changement de sens ou de mode seulement par PRET (autonome arriere)
+  invariant  8 (sortie) : OK     moteur arrete implique sens nul
+  invariant  9 (sortie) : OK     moteur autorise implique aucune cause d'arret
+  invariant 10 (sortie) : OK     mode autonome implique moteur autorise (DEL Y2 seulement en marche)
+  invariant 11 (sortie) : OK     le son continu n'existe qu'en URGENCE
+  invariant 12 (toujours) : OK     PANNE mene a DEFAUT sauf en URGENCE et DEFAUT
+  invariant 13 (interdit) : OK     URGENCE ne se quitte que vers PRET
+  invariant 14 (retour) : OK     aucun etat piege : PRET reste atteignable
+  invariant 15 (accessible) : OK     tous les etats sont accessibles
+ 
+ERREURS ET CONTRE-EXEMPLES
+  1. INVARIANT : « aucune reprise directe d'un arret ou d'un defaut vers MANUEL ou AUTONOME » : transition interdite DEFAUT --ACQUIT--> MANUEL_AV (transition n. 15)
+     contre-exemple : INIT --PANNE--> DEFAUT --ACQUIT--> MANUEL_AV
+     suite d'entrees : PANNE ACQUIT
+ 
+RESULTAT : ECHEC — 1 erreur(s), 0 avis
+Portee : la verification porte sur ce modele fini. Elle ne prouve ni le materiel, ni les
+delais reels, ni la traduction des evenements en entrees (fsm.c), qui relevent des essais.
